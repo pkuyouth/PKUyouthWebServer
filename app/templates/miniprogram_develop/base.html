@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+	<meta charset="utf-8">
+	<title>{%  block title %}{% endblock %}</title>
+	<link rel="shortcut icon" type="image/x-icon" href="{{ url_for('root.favicon') }}">
+	<link rel="icon" type="image/x-icon" href="{{ url_for('root.favicon') }}">
+	<link rel="stylesheet" type="text/css" href="{{ url_for('static',filename='css/miniprogram_develop/base.css') }}">
+	{% block style %}{% endblock %}
+</head>
+<body>
+	<header>
+		<h1>MiniProgram Development Platform -- {% block header %}{% endblock %}</h1>
+		<br>
+		<p>Powered By Rabbit !</p>
+		<p>Since 2018-05-25</p>
+	</header>
+	<br><hr><br>
+	<nav>
+		<a href="{{ url_for('miniprogram_develop.retrieval') }}" target="_blank">文章检索</a>
+		<a href="{{ url_for('miniprogram_develop.recommend') }}" target="_blank">相似推荐</a>
+		<a href="{{ url_for('static',filename='file/miniprogram_develop/word_frequency.csv') }}" download="word_frequency.csv">下载词频表csv</a>
+	</nav>
+	{% block body %}
+	{% endblock %}
+	<br><hr><br>
+	<footer>
+		<a href="http://www.miibeian.gov.cn/" target="_blank" style="">京ICP备 18018365 号</a>&#8195;@2018Rabbit
+	</footer>
+	<br>
+</body>
+</html>
+{% block script %}{% endblock %}

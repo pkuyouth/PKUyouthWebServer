@@ -1,0 +1,21 @@
+[plain] view plaincopy
+
+
+*.db
+*.pkl
+*.log
+
+
+__pycache__/
+
+/secret/*
+/logs/*
+/.Trash-0/*
+/.git.bac/
+
+/app/cache/
+/app/test/
+/app/database/
+/app/static/upload/final/
+/app/static/upload/htmlcoder/
+/app/static/video/

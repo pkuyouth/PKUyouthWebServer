@@ -1,0 +1,116 @@
+{% extends "final/base.html" %}
+{% block title %}HTML5-Coder{% endblock %}
+{% block style %}
+	<style type="text/css">
+		iframe{width: 720px; height: 540px; margin: 15px 0px;}
+		h3{padding-top: 15px;}
+		nav > a{padding: 0px 15px;}
+		nav > a:first-of-type{padding-left: 0px;}
+		div#docx-form{padding: 15px 0px;}
+		span.label{font-size: 14px;}
+	</style>
+{% endblock %}
+{% block body %}
+	<nav>
+		<a href="{{ url_for('static',filename='file/final/sample.docx') }}" download="sample.docx">Docx样例</a>
+		<a href="{{ url_for('static',filename='file/final/template.docx') }}" download="template.docx">Docx模板</a>
+	</nav>
+	<br><br>
+	<h3>上传排好版的docx文件：</h3>
+	{% raw %}
+	<div id="docx-form">
+		<form>
+			<input type="file" required="required" @change="getDocx($event)">
+			<input type="reset" value="reset" @click="reset">
+			<button @click="uploadDocx" onclick="return false;">{{ uploadBtnText }}</button>
+		</form>
+		<br>
+		<h4>参数设定:</h4>
+		<span class="label">无记者信息</span><input type="checkbox" v-model="params.noRpt"><br>
+		<span class="label">无参考文献</span><input type="checkbox" v-model="params.noRef"><br>
+		<span class="label">统计字数</span><input type="checkbox" v-model="params.countWord"><br>
+		<span class="label">统计图片</span><input type="checkbox" v-model="params.countPict"><br>
+		<span class="label">生成顶/底图</span><input type="checkbox" v-model="params.full"><br>
+		<br>
+		<h3>推送预览如下：</h3>
+		<iframe :src="previewSrc" scrolling="auto"></iframe>
+	</div>
+	{% endraw %}
+{% endblock %}
+
+{% block script%}
+<script type="text/javascript" src="{{ url_for('static',filename='js/vendor/vue.js') }}"></script>
+<script type="text/javascript" src="{{ url_for('static',filename='js/vendor/axios.min.js') }}"></script>
+<script type="text/javascript">
+	var vm1 = new Vue({
+		el: "#docx-form",
+		data: {
+			docx: null,
+			params: {
+				noRpt: false,
+				noRef: false,
+				countWord: true,
+				countPict: false,
+				full: false,
+			},
+			previewSrc: "",
+			onUpload: false,
+		},
+		computed: {
+			uploadBtnText: function () {
+				if (this.onUpload == false) {
+					return "upload"
+				} else {
+					return "uploading ..."
+				} 
+			},
+		},
+		watch: {
+			'params.countWord': function () {
+				if (this.params.countWord && this.params.countPict) {
+					this.params.countPict = false;
+				}
+			},
+			'params.countPict': function () {
+				if (this.params.countPict && this.params.countWord) {
+					this.params.countWord = false;
+				}
+			},
+		},
+		methods: {
+			getDocx: function (event) {
+				this.docx = event.target.files[0];
+			},
+			reset: function () {
+				this.docx = null;
+			},
+			uploadDocx: function () {
+				if (!this.docx) {
+					alert("docx file missing !");
+					return false;
+				};
+
+				var form = new FormData();
+				form.append('docx', this.docx);
+				form.append('params', JSON.stringify(this.params));
+
+				this.onUpload = true;
+				axios.post("{{ url_for('final.upload') }}", form
+					).then(response => {
+						this.onUpload = false;
+						if (response.data.errcode == 0) {
+							this.previewSrc = response.data.url;
+						} else {
+							console.log(response.data.error);
+							alert(response.data.error);
+						};
+					}).catch(error => {
+						this.onUpload = false;
+						console.log(error);
+						alert('XHR error !');
+					});
+			},
+		},
+	})
+</script>
+{% endblock %}

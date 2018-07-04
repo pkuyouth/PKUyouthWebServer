@@ -1,0 +1,8 @@
+body{padding: 0px 15px;}
+header > p{line-height: 1.5em;}
+header > p > span{color: red; font-size: 80%;}
+footer{padding: 0px 15px;}
+a{text-decoration: none;}
+a:hover{color: red;}
+nav > a{padding: 0px 15px;}
+nav > a:first-of-type{padding-left: 0px;}

@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<title>{%  block title %}{% endblock %}</title>
+	<link rel="shortcut icon" type="image/x-icon" href="{{ url_for('root.favicon') }}">
+	<link rel="icon" type="image/x-icon" href="{{ url_for('root.favicon') }}">
+	<link rel="stylesheet" type="text/css" href="{{ url_for('static',filename='css/final/base.css') }}">
+	{% block style %}{% endblock %}
+</head>
+<body>
+	<header>
+		<h1>HTML5-Coder</h1>
+		<br>
+		<p>Powered By Rabbit !</p>
+		<p>Since 2018-05-05</p>
+		<p><span>注：建议使用 Chrome 浏览器</span></p>
+	</header>
+	<br><hr><br>
+	{% block body %}{% endblock %}
+	<br><hr><br>
+	<footer>
+		<a href="http://www.miibeian.gov.cn/" target="_blank" style="">京ICP备 xxxxxxxx 号</a>&#8195;@2018Rabbit
+	</footer>
+	<br>
+</body>
+</html>
+{% block script %}{% endblock %}

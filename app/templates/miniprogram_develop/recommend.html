@@ -1,0 +1,204 @@
+{% extends "miniprogram_develop/base.html" %}
+{% block title %}Recommend{% endblock %}
+{% block header %}Recommend{% endblock %}
+{% block style %}
+	<style type="text/css" media="screen">
+		div > p{font-size: 16px; line-height: 1.5em; margin: 5px 0px;}
+		input,button{font-size: 16px; margin-right: 18px;}
+		h4{font-size: 110%; margin: 15px 0px;}
+		span.label{margin-right: 6px;}
+		input.news-count{width: 48px;}
+		input[type="checkbox"]{width: 16px; height: 16px;}
+		textarea.news-content{width: 480px; height: 320px;}
+		p.news > span{margin-right: 10px;}
+		p.news > span.newsId{font-weight: bold; font-size: 120%;}
+		p.news > span.similarity{font-weight: bold;}
+	</style>
+{% endblock %}
+{% block body %}
+	{% raw %}
+	<div id="recommend">
+		<h3>&gt;&#8195;随机来一批图文</h3>
+		<span class="label">News Amount: </span><input class="news-count" type="number" v-model.number="randomNewsCount" @keyup.enter="getRandomNews">
+		<button @click="getRandomNews">换一批</button>
+		<div id="news-list">
+			<news v-if="!onGetRandomNews" v-for="(news, idx) in randomNews" :info="news" :type="'random'" :key="news.id" @be-selected="changeSelected"></news>
+		</div>
+		<template v-if="recommendNewsId !== undefined">
+			<h3>&gt;&#8195;通过 NewsID 匹配相似图文</h3>
+			<span class="label">News Amount: </span><input class="news-count" type="number" v-model.number="recommendNewsByIdCount"><!-- @keyup.enter="getRecommendNewsById">-->
+			<span class="label">Selected NewsId: <b><big>{{ recommendNewsId }}</big></b></span>
+			<button @click="getRecommendNewsById" method="Tc">通过 Tc 匹配</button>
+			<button @click="getRecommendNewsById" method="CosDist">通过 CosDist 匹配</button>
+			<br>
+		</template>
+		<template>
+			<h3>&gt;&#8195;通过 Content 匹配相似图文</h3>
+			<span class="label">News Amount: </span><input class="news-count" type="number" v-model.number="recommendNewsByContentCount"><!-- @keyup.enter="getRecommendNewsByContent">-->
+			<button @click="getRecommendNewsByContent" method="Tc">通过 Tc 匹配</button>
+			<button @click="getRecommendNewsByContent" method="CosDist">通过 CosDist 匹配</button>			
+			<br><br>
+			<textarea class="news-content" v-model="recommendNewsContent" placeholder="在此粘贴待匹配的文章 ... "></textarea>
+		</template>
+		<template v-if="recommendNews.length">			
+			<h3>&gt;&#8195;推荐结果</h3>
+			<span class="label">Order By</span>
+			<button @click="orderByTime">Time</button>
+			<button @click="orderByRank">Relevancy</button>
+			<br><br>
+		</template>
+		<news v-if="!onGetRecommendNews" v-for="(news,id) in recommendNews" :info="news" :type="'recommend'" :key="news.id"></news>
+	</div>
+	{% endraw %}
+{% endblock %}
+{% block script %}
+<script type="text/javascript" src="{{ url_for('static',filename='js/vendor/vue.js') }}"></script>
+<script type="text/javascript" src="{{ url_for('static',filename='js/vendor/axios.min.js') }}"></script>
+<script type="text/javascript">
+	"use strict";
+
+	Vue.component('news',{ //图文
+		props: ['info','type'],
+		data: function() {
+			return {
+			}
+		},
+		computed: { //不要将前3放在data里，否则无法随props改变而改变
+			title: function () {
+				return this.info.title
+			},
+			url: function () {
+				return this.info.url
+			},
+			time: function () {
+				return this.info.time
+			},
+			newsId: function () {
+				return this.info.newsID
+			},
+			similarity: function () {
+				return this.info.similarity ? this.info.similarity : undefined
+			},
+		},
+		watch: {
+			onGetRecommendNews: function () {
+				if (!this.onGetRecommendNews) { //查询完成后重置排序规则
+					this.descByTime = true;
+					this.descByRank = true;
+				}
+			}
+		},
+		methods: {
+			beSelected() { //向外传递newsId
+				let newsId = event.target.parentNode.getAttribute("newsId");
+				this.$emit('be-selected', parseInt(newsId));
+			}
+		},
+		template: {% raw %}'\
+			<p class="news" :newsId="newsId">\
+				<input type="checkbox" @click="beSelected" v-if="type==\'random\'"></input>\
+				<span class="newsId">{{ newsId }}</span>\
+				<span class="time">{{ time }}</span>\
+				<span class="similarity" v-if="type==\'recommend\'">{{ similarity }}</span>\
+				<a v-text="title" :href="url" target="_black"></a>\
+			</p>',
+			{% endraw %}
+	});
+
+	var vm1 = new Vue({
+		el: "#recommend",
+		data: {
+			onGetRandomNews: false,
+			onGetRecommendNews: false,
+			randomNewsCount: 5,
+			recommendNewsByIdCount: 10,
+			recommendNewsByContentCount: 10,
+			recommendNewsId: undefined,
+			recommendNewsContent: "",
+			randomNews: [],
+			recommendNews: [],
+			descByTime: true, //按日期降序排列？
+			descByRank: true, //按相关度降序排列？
+		},
+		methods: {
+			getRandomNews() {
+				this.onGetRandomNews = true;
+				axios.post("{{ url_for('miniprogram_develop.get_random') }}",{
+					count: this.randomNewsCount,
+				}).then(response => {
+					this.randomNews = response.data.news;
+					this.recommendNews = [];
+					this.onGetRandomNews = false;
+				}).catch(error => {
+					console.log(error);
+					alert("xhr error !");
+				});
+				this.recommendNewsId = undefined; // 初始化
+			},
+			getRecommendNewsById() {
+				this.onGetRecommendNews = true;
+				axios.post("{{ url_for('miniprogram_develop.get_recommend') }}",{
+					type: "newsID",
+					newsID: this.recommendNewsId,
+					count: this.recommendNewsByIdCount,
+					method: event.target.getAttribute('method'),
+				}).then(response => {
+					this.recommendNews = response.data.news;
+					this.onGetRecommendNews = false;
+				}).catch(error => {
+					console.log(error);
+					alert("xhr error !");
+				});
+			},
+			getRecommendNewsByContent() {
+				if (!this.recommendNewsContent) return false;
+				this.onGetRecommendNews = true;
+				axios.post("{{ url_for('miniprogram_develop.get_recommend') }}",{
+					type: "content",
+					content: this.recommendNewsContent,
+					count: this.recommendNewsByContentCount,
+					method: event.target.getAttribute('method'),
+				}).then(response => {
+					this.recommendNews = response.data.news;
+					this.onGetRecommendNews = false;
+				}).catch(error => {
+					console.log(error);
+					alert("xhr error !");
+				});
+			},
+			changeSelected(newsId) {
+				this.recommendNewsId = newsId;
+				let inputs = event.target.parentNode.parentNode.getElementsByTagName("input");
+				for (let i = 0; i < inputs.length; i++) {
+					inputs[i].checked = false;
+				};
+				event.target.checked = true;
+			},
+			orderByTime() {
+				if (!this.recommendNews.length) return false;
+				this.recommendNews.sort((news1,news2) => {
+					if (this.descByTime) {
+						return (news1.time > news2.time ? -1 : 1)
+					} else {
+						return (news2.time > news1.time ? -1 : 1)
+					};
+				});
+				this.descByTime = !this.descByTime;
+				return false;
+			},
+			orderByRank() {
+				if (!this.recommendNews.length) return false;
+				this.recommendNews.sort((news1,news2) => {
+					if (this.descByRank) {
+						return news2.Tc - news1.Tc;
+					} else {
+						return news1.Tc - news2.Tc;
+					};
+				});
+				this.descByRank = !this.descByRank;
+				return false;
+			},
+		},
+	});
+</script>
+{% endblock %}

@@ -1,0 +1,305 @@
+{% extends "miniprogram_develop/base.html" %}
+{% block title %}Retrieval{% endblock %}
+{% block header %}Retrieval{% endblock %}
+{% block style %}
+	<style type="text/css" media="screen">
+		div > p{font-size: 16px; line-height: 1.5em; margin: 5px 0px;}
+		select,input,button{font-size: 16px; margin-right: 18px;}
+		ul{-moz-padding-start: 20px; -webkit-padding-start: 20px;}
+		h4{font-size: 110%; margin: 15px 0px;}
+		span.label{margin-right: 6px;}
+		input.key-query-limit{width: 48px;}
+		input[type="checkbox"]{width: 16px; height: 16px;}
+		p.news > span{margin-right: 10px;}
+		p.news > span.idx{font-weight: bold; font-size: 120%;}
+		p.news > span.field{font-weight: bold;}
+		p.news > span.term{font-size: 80%;}
+		p.news > span.terms-label{padding-left: 54px;}
+		.for-test{color: red;}
+		.dynamic{font-size: 80%;}
+	</style>
+{% endblock %}
+{% block body %}
+	{% raw %}
+	<div id="date-query">
+		<h3>&gt;&#8195;按日期检索</h3>
+		<p v-show="!initDone" class="dynamic">正在获取推送信息...</p>
+		<template v-for="select in selectsData">
+			<span class="label">{{ select.name }}</span>
+			<select v-model="selected[select.name]" :name="select.name" :key="select.id">
+				<option v-for="option in select.options" :value="option" :key="option.id">{{ option }}</option>
+			</select>
+		</template>
+		<button @click="queryByDate">Query</button>
+		<p class="for-test" v-if="showTestData"><span>确认当前选择的日期与此一致：&#8195;</span>{{ selected }}</p>
+		<br><br>
+
+		<h3>&gt;&#8195;按关键词检索</h3>
+		<input type="text" v-model.trim="queryKeyword" @keyup.enter="queryByKeyword" placeholder="enter keywords">
+		<button @click="queryByKeyword">Query</button>
+		<span class="label">Show Matched Terms</span><input type="checkbox" v-model="showTerms">
+		<br>
+		<ul>
+			<h4>Setting:</h4>
+			<li>
+				<span class="label">Limit:&#8195;</span><input type="number" class="key-query-limit" v-model.number="queryLimit" @keyup.enter="queryByKeyword"></li>
+			<li>
+				<span class="label">Query Fields:&#8195;</span>
+				<span class="label">Title</span><input type="checkbox" v-model="queryFields.title">
+				<span class="label">Content</span><input type="checkbox" v-model="queryFields.content">
+				<span class="label">Digest</span><input type="checkbox" v-model="queryFields.digest">
+			</li>
+		</ul>
+		
+		<p class="for-test" v-if="showTestData"><span>确认当前查询设置与此一致：&#8195;</span>Keyword:{{ queryKeyword }}&#8195;Limit:{{ queryLimit }}&#8195;Fields:{{ queryFields }}</p>
+		<br>
+
+		<h3>&gt;&#8195;查询结果</h3>
+		<template v-if="queryResult.length">
+			<span class="label">Order By</span>
+			<button @click="orderByTime">Time</button>
+			<button @click="orderByRank">Relevancy</button>
+			<br><br>		
+		</template>
+		<p v-if="!queryResult.length">无查询结果</p>
+		<p v-if="onQuery" class="dynamic">正在查询...</p>
+		<news v-if="!onQuery" v-for="(news, idx) in queryResult" :info="news" :idx="idx" :showterms="showTerms" :key="news.id"></news>
+	</div>
+	{% endraw %}
+{% endblock %}
+{% block script %}
+<script type="text/javascript" src="{{ url_for('static',filename='js/vendor/vue.js') }}"></script>
+<script type="text/javascript" src="{{ url_for('static',filename='js/vendor/axios.min.js') }}"></script>
+<script type="text/javascript">
+	"use strict";
+
+	Vue.component('news',{ //图文的显示框架
+		props: ['info','idx','showterms'],
+		data: function() {
+			return {
+			}
+		},
+		computed: { //不要将前3放在data里，否则无法随props改变而改变
+			title: function () {
+				return this.info.title
+			},
+			url: function () {
+				return this.info.url
+			},
+			time: function () {
+				return this.info.time
+			},
+			terms: function () {
+				if (this.info.terms) {
+					return this.info.terms
+				} else {
+					return false
+				}
+			},
+			id: function() {
+				var idx = new String(this.idx+1); //Object ??
+				while (idx.length < 4) {
+					idx = "0" + idx;
+				}
+				return idx + "" // ???
+			},
+		},
+		template: {% raw %}'\
+			<p class="news">\
+				<span class="idx">{{ id }}</span>\
+				<span class="time">{{ time }}</span>\
+				<a v-text="title" :href="url" target="_black"></a>\
+				<template v-if="terms && showterms">\
+					<br><span class="terms-label">Matched Terms:</span>\
+				</template>\
+				<template v-if="terms && showterms" v-for="term in terms">\
+					<span class="field">{{ term.field }}</span> =>\
+					<span class="term">{{ term.term }}</span>\
+				</template>\
+			</p>',
+			{% endraw %}
+	})
+
+	var vm1 = new Vue({
+		el: "#date-query",
+		data: {
+			showTestData: false, //是否显示测试数据
+			initDone: false, //是否初始化完成？
+			onQuery: false,  //是否正在查询？
+			showTerms: true, //是否显示匹配字段
+			selected: {
+				year: 0,
+				month: 0,
+				day: 0,
+			},
+			queryKeyword: "",
+			queryLimit: 20,
+			queryFields: {
+				title: true,
+				content: true,
+				digest: false,
+			},
+			selects: {},
+			options_day: [],
+			options_month: [],
+			options_year: [],
+			selectsData: [],
+			queryResult: [],
+			descByTime: true, //按日期降序排列？
+			descByRank: true, //按相关度降序排列？
+		},
+		computed: {
+			hasFields: function () { // 判断是否存在fields 
+				for (var key in this.queryFields) {
+					if (this.queryFields[key]) {
+						return true;
+					}
+				};
+				return false;
+			},
+		},
+		watch: { //修复不自动变默认值的问题
+			selected: {
+				handler: function () {
+					this.changeOptions();
+					if (this.options_month.indexOf(this.selected.month) == -1 //当前year中不存在已选month
+						|| this.selected.year == "0") { //year为0
+						this.$set(this.selected, "month", "0"); //让month归零
+					};
+					if (this.options_day.indexOf(this.selected.day) == -1 //当前month中不存在已选day
+						|| this.selected.month == "0") { //month为0
+						this.$set(this.selected, "day", "0"); //让day归零
+					}
+				},
+				deep: true, //Object 需要 watch-deep
+			},
+			selects: function () {
+				this.changeOptions();
+			},
+			onQuery: function () {
+				if (!this.onQuery) { //查询完成后重置排序规则
+					this.descByTime = true;
+					this.descByRank = true;
+				}
+			},
+		},
+		methods: {
+			changeOptions: function() { //用methods修改选项
+				var vm = this;
+				var year = this.selected.year;
+				var month = this.selected.month;
+				function get_options_year () {
+					return Object.keys(vm.selects);
+				};
+				function get_options_month() {
+					return Object.keys(vm.selects[year]);
+				};
+				function get_options_day() {
+					if (vm.selects[year][month]) { //因为在预先筛选前执行，可能会找不到
+						return Array.from(vm.selects[year][month], x => x + ""); //转为str
+					} else {
+						return Array.from(vm.options_day); //否则返回本身
+					}
+				};
+				function get_selects_data() {
+					return [
+						{name: "year", options: vm.options_year},
+						{name: "month", options: vm.options_month},
+						{name: "day", options: vm.options_day}
+					]
+				};
+				vm.options_year = get_options_year();
+				vm.options_month = get_options_month();
+				vm.options_day = get_options_day();
+				vm.selectsData = get_selects_data();
+			},
+			getDateRange: function () {
+				axios.post("{{ url_for('miniprogram_develop.query') }}",{
+					type: "dateRange", //post 默认用json方式
+				}).then(response => {
+					this.selects = response.data.dateRange;
+					this.initDone = true;
+				}).catch(error => {
+					console.log(error);
+					alert("xhr error !");
+				});
+			},
+			queryByDate: function () {
+				this.onQuery = true;
+				axios.post("{{ url_for('miniprogram_develop.query') }}",{
+					type: "dateQuery",
+					date: this.selected,
+				}).then(response => {
+					this.queryResult = response.data.result;
+					this.onQuery = false;
+				}).catch(error => {
+					console.log(error);
+					alert("xhr error !");
+				});
+			},
+			queryByKeyword: function () {
+				if (this.queryKeyword == "") {
+					alert("no query keyword !");
+					return false;
+				}; //没有内容则不做请求
+				if (this.queryLimit <= 0) {
+					alert(`illegal keyword-query limit ${this.queryLimit} !`);
+					this.queryLimit = 20; //恢复默认值
+					return false;
+				}; //非法的queryLimit
+				if (!this.hasFields) {
+					alert("no query fields !");
+					this.queryFields = Object.assign({},this.queryFields,{
+						title: true,
+						content: true,
+						digest: false,
+					}); //恢复默认值
+					return false;
+				}; //非法的queryFields
+				this.onQuery = true;
+				axios.post("{{ url_for('miniprogram_develop.query') }}",{
+					type: "keywordQuery",
+					keyword: this.queryKeyword,
+					limit: this.queryLimit,
+					fields: this.queryFields,
+				}).then(response => {
+					this.queryResult = response.data.result;
+					this.onQuery = false;
+				}).catch(error => {
+					console.log(error);
+					alert("xhr error !");
+				})
+			},
+			orderByTime: function () {
+				if (!this.queryResult.length) return false;
+				this.queryResult.sort((news1,news2) => {
+					if (this.descByTime) {
+						return (news1.time > news2.time ? -1 : 1)
+					} else {
+						return (news2.time > news1.time ? -1 : 1)
+					};
+				});
+				this.descByTime = !this.descByTime;
+				return false;
+			},
+			orderByRank: function () {
+				if (!this.queryResult.length) return false;
+				if (this.queryResult[0].rank === undefined) return false;
+				this.queryResult.sort((news1,news2) => {
+					if (this.descByRank) {
+						return news1.rank - news2.rank;
+					} else {
+						return news2.rank - news1.rank;
+					};
+				});
+				this.descByRank = !this.descByRank;
+				return false;
+			},
+		},
+		created: function () {
+			this.getDateRange();
+		},
+	});
+
+</script>
+{% endblock %}
