@@ -6,20 +6,24 @@ import os
 import sys
 import re
 import logging
+import smtplib
+from email.mime.text import MIMEText
+from email.utils import formataddr
+from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
 from itsdangerous import JSONWebSignatureSerializer as Serializer
 
 try:
-	from commonfuncs import pkl_load
+	from commonfuncs import pkl_load, get_secret
 except (ImportError, SystemError):
-	from .commonfuncs import pkl_load
+	from .commonfuncs import pkl_load, get_secret
 
 basedir = os.path.join(os.path.dirname(__file__),"../") # app根目录
-secretdir = os.path.join(basedir,"../secret")
 
 
 __all__ = [
 	"Logger",
+	"Mailer",
 	"Encipher",
 ]
 
@@ -34,7 +38,7 @@ class Logger(object):
 
 		self.__logger = logging.getLogger(self.name)
 		self.__logger.setLevel(logging.DEBUG)
-		
+
 		self.file_log = self.__toFile = True
 		self.console_log = self.__toConsole = True
 
@@ -118,7 +122,7 @@ class Logger(object):
 			self.__toConsole = False
 			self.__remove_handler(logging.StreamHandler)
 		else:
-			raise ValueError("attr -- 'console_log' should be set to True/False !")	
+			raise ValueError("attr -- 'console_log' should be set to True/False !")
 
 
 	def debug(self, *arg, **kw):
@@ -140,10 +144,85 @@ class Logger(object):
 		return self.error(*arg, **kw)
 
 
+class Mailer(object):
+
+	#SMTP_Domain = 'smtp.pku.edu.cn'
+	#SMTP_Port = 25
+	#
+	SMTP_Domain = 'smtp.qq.com'
+	SMTP_Port = 465
+	SMTP_Account = get_secret('mailqq_user.pkl')
+	Authorization_Code = get_secret('mailqq_pswd.pkl')
+
+	To_email = get_secret('163platform_user.pkl')
+	To_user = 'PKUyouthWxAppEmailPlatform'
+	From_email = 'PKUyouthWebServer@pku.edu.cn' # 假地址
+	From_User = 'PKUyouthWebServer' # 和To_User 相照应，总的 From_User
+
+	Feedback_User = "Feedback"
+	SystemLog_User = "SystemInfo"
+	Contribute_User = "Contribute"
+
+	logger = Logger()
+
+
+	@classmethod
+	def timestamp(cls):
+		return str((datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+
+	@classmethod
+	def template(cls, from_user, subject, text, timestamp=None):
+		subject, text = subject.strip(), text.strip()
+		return "\n".join([
+			"<p><b>[Suject]&ensp;</b><span> %s</span></p>" % subject,
+			"<p><b>[From]&ensp;&ensp;</b><span> %s</span></p>" % cls.From_User,
+			"<p><b>[To]&ensp;&ensp;&ensp;&ensp;</b><span> %s</span></p>" % cls.To_user,
+			"<p><b>[Time]&ensp;&ensp;</b><span> %s</span></p>" % timestamp or cls.timestamp(),
+			"<br>",
+			"<p>%s</p>" % text,
+		]).strip()
+
+	@classmethod
+	def message(cls, from_user, subject, text):
+		timestamp = cls.timestamp()
+		html = cls.template(from_user, subject, text, timestamp)
+		msg = MIMEText(html, 'html', 'utf-8')
+		msg['From'] = formataddr([from_user, cls.From_email])
+		msg['To'] = formataddr([cls.To_user, cls.To_email])
+		msg['Subject'] = "{} {}".format(subject, timestamp)
+		return msg
+
+	def send(self, from_user, subject, text):
+		try:
+			msg = self.message(from_user, subject, text)
+			#with smtplib.SMTP(self.SMTP_Domain, self.SMTP_Port) as server:
+			with smtplib.SMTP_SSL(self.SMTP_Domain, self.SMTP_Port) as server:
+				server.login(self.SMTP_Account, self.Authorization_Code)
+				server.sendmail(self.SMTP_Account, [self.To_email,], msg.as_string())
+		except Exception as err:
+			self.logger(repr(err))
+			raise err
+
+
+	def feedback(self, text):
+		subject = "用户反馈"
+		from_user = self.Feedback_User
+		self.send(from_user, subject, text)
+
+	def log(self, text):
+		subject = "系统日志"
+		from_user = self.SystemLog_User
+		self.send(from_user, subject, text)
+
+	def contribute(self, text):
+		subject = "用户投稿"
+		from_user = self.Contribute_User
+		self.send(from_user, subject, text)
+
 
 class Encipher(object):
 
-	__hashMethod = pkl_load(secretdir,"pwdhash_method.pkl",log=False)
+	__hashMethod = get_secret('pwdhash_method.pkl')
 	__reRawHash = re.compile(r"^.*?:.*?:.*?\$(?P<salt>.*?)\$(?P<code>.*?)$")
 
 	def __init__(self, secret_key):
@@ -179,6 +258,6 @@ class Encipher(object):
 
 	def verify(self, token, raw):
 		try:
-			return self.check(*self.get_raw(token), raw=raw)
+			return self.check(*self.get_raw(token), raw)
 		except TypeError: # 否则，序列化前为对象
 			return self.get_raw(token)[0] == raw

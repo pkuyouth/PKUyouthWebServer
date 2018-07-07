@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # filename: app/views/miniprogram_api.py
-# 
+#
 
 from flask import Blueprint
 miniprogram_api = Blueprint('miniprogram_api', __name__)
 
-import os 
+import os
 import sys
 
 basedir = os.path.join(os.path.dirname(__file__),"..") # 根目录为app
@@ -22,12 +22,13 @@ from functools import wraps
 from flask import redirect, url_for, request, jsonify, session, abort
 
 from ..lib.commonfuncs import dictToESC, get_secret
-from ..lib.commonclass import Logger, Encipher
+from ..lib.commonclass import Logger, Mailer, Encipher
 from ..lib.wxapi import jscode2session
 from ..lib.minipgm_api_db import MongoDB, SQLiteDB
 
 
 logger = Logger()
+mailer = Mailer()
 encipher = Encipher(get_secret("flask_secret_key.pkl"))
 userDB = MongoDB()
 
@@ -88,6 +89,36 @@ def verify_login(func):
 	return wrapper
 
 
+def int_param(name, param, mini=1, maxi=None):
+	if param is None:
+		raise KeyError("param '%s' is missing !" % name)
+	elif not isinstance(param,int):
+		raise TypeError("illegal type of param '%s' -- %s !" % (name, type(param).__name__))
+	elif mini is not None and param < mini:
+		raise ValueError("illegal value of param '%s' -- %s !" % (name, param))
+	elif maxi is not None and param > maxi:
+		raise ValueError("illegal value of param '%s' -- %s !" % (name, param))
+	else:
+		return param
+
+def str_param(name, param):
+	if param is None:
+		raise KeyError("param '%s' is missing !" % name)
+	elif not isinstance(param,str):
+		raise TypeError("illegal type of param '%s' -- %s !" % (name, type(param).__name__))
+	elif param == '':
+		raise KeyError("param '%s' is empty !" % name)
+	else:
+		return param
+
+def limited_param(name, param, rational=[]):
+	if param is None:
+		raise KeyError("param '%s' is missing !" % name)
+	elif param not in rational:
+		raise KeyError("unexpected value of '%s' -- %s !" % (name, param))
+	else:
+		return param
+
 
 @miniprogram_api.route('/',methods=["GET","POST"])
 def root():
@@ -116,31 +147,22 @@ def login():
 		return jsonify(jsonPack)
 
 
-@miniprogram_api.route("/get_random", methods=["GET"])
+@miniprogram_api.route("/get_random", methods=["POST"])
 @verify_timestamp
 @verify_login
 def get_random():
 	try:
-		try:		
-			count = request.args.get("count")
-			count = int(count) if count is not None else count
-		except Exception as err:
-			raise err
-		if count is None: # 为None，异常
-			raise KeyError("random news count is missing !")
-		elif count < 1: # 异常值
-			raise ValueError("illegal count number %s !" % count)
-		else:
-			newsDB = SQLiteDB()
-			newsInfo, newsIDs = newsDB.get_random_news(count)
-			newsCol = userDB.get_newsCol(session["openid"])
-			for newsID, news in zip(newsIDs, newsInfo):
-				news.update({"star": newsID in newsCol})
+		count = int_param('count', request.json.get("count"))
+		newsDB = SQLiteDB()
+		newsInfo, newsIDs = newsDB.get_random_news(count)
+		newsCol = userDB.get_newsCol(session["openid"])
+		for newsID, news in zip(newsIDs, newsInfo):
+			news.update({"star": newsID in newsCol})
 	except Exception as err:
 		jsonPack = {"errcode": -1, "error": repr(err)}
 		raise err
 	else:
-		jsonPack = {"errcode": 0, "news": newsInfo}		
+		jsonPack = {"errcode": 0, "news": newsInfo}
 	finally:
 		newsDB.close()
 		return jsonify(jsonPack)
@@ -154,7 +176,7 @@ def get_columns():
 		columns = ["调查","雕龙","光阴","机动","评论","人物","视界","特稿","言己","姿势"]
 		results = [{
 			"id": idx,
-			"title": column, 
+			"title": column,
 			"cover": "https://rabbitzxh.top/static/image/miniprogram_api/%s.jpg" % "".join(lazy_pinyin(column))
 		} for idx, column in enumerate(columns)]
 	except Exception as err:
@@ -166,20 +188,25 @@ def get_columns():
 		return jsonify(jsonPack)
 
 
-@miniprogram_api.route("/get_favorite", methods=["GET"])
+@miniprogram_api.route("/get_favorite", methods=["POST"])
 @verify_timestamp
 @verify_login
 def get_favorite():
 	try:
+		reqData = request.json
+		limit = int_param('limit', reqData.get("limit"))
+		page = int_param('page', reqData.get("page"))
+
 		newsDB = SQLiteDB()
 		newsCol = userDB.get_newsCol(session["openid"],withTime=True)
 		newsInfo = newsDB.get_news_by_ID(list(newsCol.keys()))
 		for news in newsInfo:
 			news.update({
-				"star": True, 
+				"star": True,
 				"starTime": newsCol[news["newsID"]]
 			})
 		newsInfo.sort(key=lambda news: news["starTime"], reverse=True)
+		newsInfo = newsInfo[(page-1)*limit: page*limit]
 	except Exception as err:
 		jsonPack = {"errcode": -1, "error": repr(err)}
 		raise err
@@ -196,25 +223,15 @@ def get_favorite():
 def star():
 	try:
 		newsDB = SQLiteDB()
-		openid = session["openid"]
+
 		reqData = request.json
-		action = reqData.get("action")
-		newsID = reqData.get("newsID")
-		actionTime = reqData.get("actionTime")
-		if action is None:
-			raise KeyError("param 'action' is missing !")
-		elif action not in ["star","unstar"]:
-			raise KeyError("unexpected value of 'action' -- %s !" % action)
-		elif newsID is None:
-			raise KeyError("param 'newsID' is missing !")
-		elif not isinstance(newsID,int):
-			raise TypeError("illegal type of 'newsID' -- %s !" % type(newsID).__name__)
-		elif newsID not in newsDB.get_newsIDs():
-			raise ValueError("newsID %s is out of range !" % newsID)
-		else:
-			userDB.update_newsCol(openid, newsID, action, actionTime)
+		action = limited_param('action', reqData.get("action"), ["star","unstar"])
+		newsID = limited_param('newsID', reqData.get("newsID"), newsDB.get_newsIDs())
+		actionTime = int_param('actionTime', reqData.get("actionTime"), mini=None)
+
+		userDB.update_newsCol(session["openid"], newsID, action, actionTime)
 	except Exception as err:
-		jsonPack = {"errcode": -1, "error": repr(err)}		
+		jsonPack = {"errcode": -1, "error": repr(err)}
 		raise err
 	else:
 		jsonPack = {"errcode": 0, "action": action, "newsID": newsID}
@@ -229,26 +246,18 @@ def star():
 def search():
 	try:
 		reqData = request.json
-		keyword = reqData.get("keyword")
-		limit = reqData.get("limit")
-		if keyword is None: 
-			raise KeyError("param 'keyword' is missing !")
-		elif not isinstance(keyword,str):
-			raise TypeError("illegal type of param 'keyword' -- %s !" % type(keyword).__name__)
-		elif keyword == '':
-			raise KeyError("param 'keyword' is empty !")
-		elif limit is None:
-			raise KeyError("param 'limit' is miss !")
-		elif not isinstance(limit,int):
-			raise TypeError("illegal type of param 'limit' -- %s !" % type(limit).__name__)
-		elif limit < 1:
-			raise ValueError("illegal value of param 'limit' -- %s !" % limit)
-		else:
-			newsDB = SQLiteDB()
-			newsInfo, newsIDs = newsDB.search_news(keyword, limit)
-			newsCol = userDB.get_newsCol(session["openid"])
-			for newsID, news in zip(newsIDs, newsInfo):
-				news.update({"star": newsID in newsCol})
+		keyword = str_param('keyword', reqData.get("keyword"))
+		limit = int_param('limit', reqData.get("limit"))
+		page = int_param('page', reqData.get("page"))
+
+		newsDB = SQLiteDB()
+		newsInfo, newsIDs = newsDB.search_news(keyword, limit*page)
+		newsInfo = newsInfo[(page-1)*limit: page*limit]
+		newsIDs = newsIDs[(page-1)*limit: page*limit]
+
+		newsCol = userDB.get_newsCol(session["openid"])
+		for newsID, news in zip(newsIDs, newsInfo):
+			news.update({"star": newsID in newsCol})
 	except Exception as err:
 		jsonPack = {"errcode": -1, "errro": repr(err)}
 		raise err
@@ -261,30 +270,20 @@ def search():
 
 @miniprogram_api.route("/recommend", methods=["POST"])
 @verify_timestamp
-@verify_timestamp
+@verify_login
 def recommend():
 	try:
 		newsDB = SQLiteDB()
+
 		reqData = request.json
-		newsID = reqData.get("newsID")
-		limit = reqData.get("limit")
-		if newsID is None:
-			raise KeyError("param 'newsID' is missing !")
-		elif not isinstance(newsID,int):
-			raise TypeError("illegal type of 'newsID' -- %s !" % type(newsID).__name__)
-		elif newsID not in newsDB.get_newsIDs():
-			raise ValueError("newsID %s is out of range !" % newsID)
-		elif limit is None:
-			raise KeyError("param 'limit' is miss !")
-		elif not isinstance(limit,int):
-			raise TypeError("illegal type of param 'limit' -- %s !" % type(limit).__name__)
-		elif limit < 1:
-			raise ValueError("illegal value of param 'limit' -- %s !" % limit)
-		else:
-			newsInfo, newsIDs = newsDB.recommend_news(newsID, limit)
-			newsCol = userDB.get_newsCol(session["openid"])
-			for newsID, news in zip(newsIDs, newsInfo):
-				news.update({"star": newsID in newsCol})
+		limit = int_param('limit', reqData.get("limit"))
+		newsID = limited_param('newsID', reqData.get("newsID"), newsDB.get_newsIDs())
+
+		newsInfo, newsIDs = newsDB.recommend_news(newsID, limit)
+		newsCol = userDB.get_newsCol(session["openid"])
+		for newsID, news in zip(newsIDs, newsInfo):
+			news.update({"star": newsID in newsCol})
+
 	except Exception as err:
 		jsonPack = {"errcode": -1, "errro": repr(err)}
 		raise err
@@ -294,12 +293,13 @@ def recommend():
 		newsDB.close()
 		return jsonify(jsonPack)
 
+
 @miniprogram_api.route("/feedback", methods=["POST"])
 @verify_timestamp
 @verify_login
 def feedback():
 	try:
-		feedbackText = request.json.get("feedback",None)
+		feedbackText = str_param('feedbackText', request.json.get("feedback"))
 		if feedbackText.strip() == 'false':
 			errcode = -1
 		else:
@@ -308,6 +308,7 @@ def feedback():
 		jsonPack = {"errcode": -1, "errro": repr(err)}
 		raise err
 	else:
+		mailer.feedback(feedbackText)
 		jsonPack = {"errcode": errcode, "result": feedbackText}
 	finally:
 		return jsonify(jsonPack)
