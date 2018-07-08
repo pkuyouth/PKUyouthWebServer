@@ -1,20 +1,19 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # filename: app/views/miniprogram_webserver.py
-# 
+#
 
 from flask import Blueprint
 miniprogram_webserver = Blueprint('miniprogram_webserver', __name__)
 
-import os 
-import sys
+import os
 
 basedir = os.path.join(os.path.dirname(__file__),"..") # 根目录为app
 cachedir = os.path.join(basedir,"cache")
 secretdir = os.path.join(basedir,"../secret")
 
 
-from ..lib.commonfuncs import pkl_load 
+from ..lib.commonfuncs import pkl_load
 
 import hashlib
 

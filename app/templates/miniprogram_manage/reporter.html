@@ -1,0 +1,127 @@
+{% extends "miniprogram_manage/base.html" %}
+{% block title %}Reporters{% endblock title %}
+
+{% block body %}
+  <div class="row">
+    <div class="col">
+      <h2>记者信息</h2>
+      <p>这里可以修改记者信息</p>
+      <nav class="pagination pagination-sm">
+        <ul class="pagination">
+          <li class="page-item {% if thisPage == 1 %}disabled{% endif %}">
+            <a class="page-link" href="{{ url_for('miniprogram_manage.reporter_list',page=thisPage-1) }}">Previous</a>
+          </li>
+          <li class="page-item {% if thisPage == pageNum %}disabled{% endif %}">
+            <a class="page-link" href="{{ url_for('miniprogram_manage.reporter_list',page=thisPage+1) }}">Next</a>
+          </li>
+        {% for page in range(1,pageNum+1) %}
+          <li class="page-item {% if page == thisPage %}active{% endif %}">
+            <a class="page-link" href="{{ url_for('miniprogram_manage.reporter_list',page=page) }}">{{ page }}</a>
+          </li>
+        {% endfor %}
+        </ul>
+      </nav>
+      <table class="table table-sm table-responsive-md table-hover">
+        <thead class="thead-light">
+          <tr>
+            <th>newsID</th>
+            <th>Time</th>
+            <th>Reporter</th>
+            <th class="w-50">Title</th>
+            <th>In_Use</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for news in newsInfo %}
+        {% set inUse = news.in_use %}
+          <tr class="text-{% if inUse %}dark{% else %}muted{% endif %}" news-id="{{ news.newsID }}">
+            <td class="font-weight-bold">{{ news.newsID }}</td>
+            <td>{{ news.masssend_time[:10] }}</td>
+            <td>
+              <form class="form-inline">
+                <div class="form-row mx-md-3">
+                 <input class="form-control form-control-sm" type="text" name="column" value="{{ news.reporter }}" required="required" {% if not inUse %}disabled="disabled"{% endif %}>
+                </div>
+                <div class="form-row">
+                  <button class="btn btn-sm btn-outline-{% if not inUse %}muted{% else %}primary{% endif %}" {% if not inUse %}disabled="disabled"{% endif %} onclick="tapChangeRptBtn(this);return false;" in-use="{{ inUse }}">Change</button>
+                </div>
+              </form>
+            </td>
+            <td class="url"><a href="{{ news.content_url }}" target="_blank" class="text-{% if inUse %}primary{% else %}light{% endif %}">{{ news.title }}</a></td>
+            <td>
+              <button type="button" class="btn btn-outline-{% if inUse %}primary{% else %}success{% endif %}" onclick="tapUseBtn(this);" in-use="{{ inUse }}">{% if inUse %}Discard{% else %}Use{% endif %}</button>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+{% endblock body %}
+
+
+{% block script %}
+
+<script type="text/javascript">
+  "use strict";
+
+  $('form input').blur(function() {
+    tapChangeRptBtn(this);
+  });
+
+  function tapChangeRptBtn(dom) {
+    let btn = $(dom);
+    let val = btn.parents("td").find("input").val();
+    //if (val === '') return;
+    axios.post("{{ url_for('miniprogram_manage.change') }}",{
+      newsID: btn.parents("tr").attr("news-id"),
+      key: "reporter",
+      value: val, // 返回相反值
+    }).then((resp)=>{
+      if (resp.data.errcode === 0) {
+        return;
+      } else {
+        throw new Error(resp.data);
+        alert('XHR Error !');
+      };
+    }).catch((err)=>{
+      throw new Error(err);
+      alert('XHR Error !');
+    });
+  };
+
+  function tapUseBtn(dom) {
+    let btn = $(dom);
+    let inUse = parseInt(btn.attr("in-use"));
+    axios.post("{{ url_for('miniprogram_manage.change') }}",{
+      newsID: btn.parents("tr").attr("news-id"),
+      key: "in_use",
+      value: !inUse, // 返回相反值
+    }).then((resp)=>{
+      if (resp.data.errcode === 0) {
+        btn.toggleClass("btn-outline-success btn-outline-primary");
+        btn.parents("tr").toggleClass("text-dark text-muted");
+        btn.parents("tr").find("form button").toggleClass("btn-outline-primary btn-outline-muted");
+        btn.parent().siblings(".url").find("a").toggleClass("text-primary text-light");
+        btn.text(!inUse ? 'Discard' : 'Use');
+        if (!inUse) {
+            btn.parents("tr").find(".form-row > input[type=text]").removeAttr("disabled");
+            btn.parents("tr").find(".form-row > button").removeAttr("disabled");
+          } else {
+            btn.parents("tr").find(".form-row > input[type=text]").attr("disabled","disabled");
+            btn.parents("tr").find(".form-row > button").attr("disabled","disabled");
+          };
+        btn.attr("in-use", !inUse ? 1 : 0);
+      } else {
+        throw new Error(resp.data);
+      };
+    }).catch((err)=>{
+      throw new Error(err);
+      alert('XHR Error !');
+    });
+  };
+
+</script>
+
+{% endblock script %}

@@ -21,11 +21,18 @@ def create_app(configName):
 	app.register_blueprint(final,url_prefix="/tip/final")
 
 
-	from .views import miniprogram_develop, miniprogram_webserver, miniprogram_api
+	from .views import (
+		miniprogram_develop,
+		miniprogram_api,
+		miniprogram_webserver,
+		miniprogram_manage,
+	)
 
-	app.register_blueprint(miniprogram_develop,url_prefix="/pkuyouth/miniprogram/develop")
-	app.register_blueprint(miniprogram_webserver,url_prefix="/pkuyouth/miniprogram/webserver")
-	app.register_blueprint(miniprogram_api,url_prefix="/pkuyouth/miniprogram/api")
+	prefix = '/pkuyouth/miniprogram/'
 
+	app.register_blueprint(miniprogram_develop, url_prefix= prefix + 'develop')
+	app.register_blueprint(miniprogram_webserver, url_prefix= prefix + 'webserver')
+	app.register_blueprint(miniprogram_api, url_prefix= prefix + 'api')
+	app.register_blueprint(miniprogram_manage, url_prefix= prefix + 'manage')
 
 	return app

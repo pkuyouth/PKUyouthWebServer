@@ -1,7 +1,7 @@
-#!/usr/bin/env python3 
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # filename: commonfuncs.py
-# 
+#
 # 保存常用的函数
 
 import os
@@ -21,6 +21,7 @@ secretdir = os.path.join(basedir,"../secret")
 __all__ = [
 	"timeit",
 	"iter_split",
+	"iter_flat",
 	"listSplit",
 	"show_status",
 	"isChinese",
@@ -121,7 +122,7 @@ def iter_split(origin, n=500):
 	elif isinstance(origin, GeneratorType): # 如果是生成器
 		def gen_func(origin): # 将 yield 封装！ 否则无法正常 return
 			listFragment = []
-			for ele in origin: 
+			for ele in origin:
 				listFragment.append(ele)
 				if len(listFragment) >= n:
 					yield listFragment.copy()
@@ -131,6 +132,16 @@ def iter_split(origin, n=500):
 		return gen_func(origin)
 	else:
 		raise TypeError("illegal type %s for split !" % type(origin))
+
+
+def iter_flat(origin):
+	resultsList = []
+	for item in origin:
+		if isinstance(item, (list,tuple)):
+			resultsList.extend(iter_flat(item))
+		else:
+			resultsList.append(item)
+	return resultsList
 
 
 def show_status(iterable, desc="running in iteration ..."):

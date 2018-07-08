@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8
 # filename: frequency.py
-#
 
 
 import os
@@ -169,7 +168,7 @@ class analyzer(object):
 		newsSum = len(self.wordFrags)
 		results = [details for word,details in self.details.items()]
 		results.sort(key=lambda details: details["cv"],reverse=True)
-		
+
 		occur_freq = np.array([details["occur_freq"] for details in results])
 		cv = np.array([details["cv"] for details in results])
 
@@ -212,7 +211,7 @@ def plt_show():
 
 	results = list()
 	for newsID_x, newsBin_x in show_status(binarize.items()):
-		for newsID_y, newsBin_y in binarize.items():	
+		for newsID_y, newsBin_y in binarize.items():
 			if newsID_x > newsID_y: # 减少一半运算量
 				continue
 			else:
@@ -223,11 +222,11 @@ def plt_show():
 
 	#results.sort(lambda item: item[2])
 	results.sort(reverse=True)
-	
+
 	plt.plot(np.array(results))
 	plt.show()
 
 if __name__ == '__main__':
 	#analyzer().work()
 	plt_show()
-	
+

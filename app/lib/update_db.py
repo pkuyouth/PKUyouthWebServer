@@ -3,6 +3,8 @@
 # filename: update_data.py
 
 import os
+import re
+from copy import copy
 import sqlite3
 from datetime import datetime
 from functools import partial
@@ -16,11 +18,11 @@ from whoosh.index import create_in
 from whoosh.fields import Schema, TEXT # 不可直接 import × 否则与 datetime 冲突
 
 try:
-	from .commonfuncs import pkl_load, pkl_dump, show_status #从别的包调用
+	from .commonfuncs import pkl_load, pkl_dump, show_status, iter_flat #从别的包调用
 	from .commonclass import Logger
 	from .jieba_whoosh.analyzer import ChineseAnalyzer
 except (SystemError, ImportError): #如果失败，则说明直接调用
-	from commonfuncs import pkl_load, pkl_dump, show_status
+	from commonfuncs import pkl_load, pkl_dump, show_status, iter_flat
 	from commonclass import Logger
 	from jieba_whoosh.analyzer import ChineseAnalyzer
 
@@ -62,6 +64,12 @@ class SQliteDB(object):
 		return cur
 
 	@property
+	def single_cur(self):
+		cur = self.con.cursor()
+		cur.row_factory = self.Single_Factory
+		return cur
+
+	@property
 	def Dict_Factory(self):
 		return lambda cur,row: dict(zip([col[0] for col in cur.description],row))
 
@@ -69,34 +77,56 @@ class SQliteDB(object):
 	def Row(self):
 		return sqlite3.Row
 
+	@property
+	def Single_Factory(self):
+		return lambda cur,row: row[0]
+
+	def execute(self,*args,**kwargs):
+		return self.cur.execute(*args,**kwargs)
+
+	def executemany(self,*args,**kwargs):
+		return self.cur.executemany(*args,**kwargs)
+
 	def create_table(self, tableName, rebuild=False):
 		try:
 			if rebuild: #如果指明重构，则先删除原表
 				self.con.execute("DROP TABLE IF EXISTS %s" % tableName)
 				self.con.commit()
-			if tableName == 'newsInfo':
+			if tableName == 'newsInfo': # 由微信api接口得到的原始数据
 				self.con.execute("""CREATE TABLE IF NOT EXISTS %s
 					(
-						newsID 				CHAR(11) PRIMARY KEY not NULL,
-						appmsgid			CHAR(10) not NULL,
-						idx 				CHAR(1) not NULL,
-						sn 					TEXT not NULL,
-						title				TEXT not NULL,
-						cover 				TEXT not NULL,
-						content_url 		TEXT not NULL,
-						like_num			INT not NULL,
-						read_num			INT not NULL,
-						masssend_time		TIME not NULL
+						newsID 				CHAR(11) PRIMARY KEY NOT NULL,
+						appmsgid			CHAR(10) NOT NULL,
+						idx 				CHAR(1) NOT NULL,
+						sn 					TEXT NOT NULL,
+						title				TEXT NOT NULL,
+						cover 				TEXT NOT NULL,
+						content_url 		TEXT NOT NULL,
+						like_num			INT NOT NULL,
+						read_num			INT NOT NULL,
+						masssend_time		TIME NOT NULL
 					)
 				""" % tableName)
 			elif tableName == 'newsContent':
 				self.con.execute("""CREATE TABLE IF NOT EXISTS %s
 					(
-						newsID 			CHAR(11) PRIMARY KEY not NULL,
-						title 			TEXT not NULL,
-						content 		TEXT not NULL
+						newsID 			CHAR(11) PRIMARY KEY NOT NULL,
+						title 			TEXT NOT NULL,
+						content 		TEXT NOT NULL,
+						FOREIGN KEY (newsID) REFERENCES newsInfo(newsID)
 					)
 				""" % tableName)
+			elif tableName == 'newsDetail': # 手工补充的参数 和 人为设定的参数
+				self.con.execute("""CREATE TABLE IF NOT EXISTS %s
+					(
+						newsID 			CHAR(11) PRIMARY KEY NOT NULL,
+						column   		TEXT NOT NULL,
+						reporter 		TEXT DEFAULT '' NOT NULL,
+						in_use 	  		BOOLEAN DEFAULT 1 NOT Null,
+						FOREIGN KEY (newsID) REFERENCES newsInfo(newsID)
+					)
+				""" % tableName)
+
 			self.con.commit()
 		except Exception as err:
 			raise err
@@ -104,7 +134,7 @@ class SQliteDB(object):
 	def insert_one(self, table, dataDict):
 		k,v = tuple(zip(*dataDict))
 		with self.con:
-			self.con.execute("INSERT INTO %s (%s) VALUES (%s)"
+			self.con.execute("INSERT OR REPLACE INTO %s (%s) VALUES (%s)"
 				% (table, ",".join(k), ",".join('?'*len(k))), v)
 			self.con.commit()
 
@@ -113,12 +143,60 @@ class SQliteDB(object):
 		k = dataDicts[0].keys()
 		vs = [tuple(dataDict.values()) for dataDict in dataDicts]
 		with self.con:
-			self.con.executemany("INSERT INTO %s (%s) VALUES (%s)"
+			self.con.executemany("INSERT OR REPLACE INTO %s (%s) VALUES (%s)"
 				% (table, ",".join(k), ",".join('?'*len(k))), vs)
 			self.con.commit()
 
-	def select(self, table, fields=()):
+	def select(self, table, fields):
 		return self.cur.execute("SELECT %s FROM %s" % (",".join(fields), table))
+
+	def select_join(self, fields, key="newsID"):
+		'''fields = (
+			("newsInfo",("newsID","title","masssend_time AS time")), # 可别名
+			("newsDetail",("column","in_use")),
+			("newsContent",("content","newsID")) # 可重复 key
+		)
+		key = "newsID"'''
+
+		fields = [[table, ['.'.join([table,col]) for col in cols]] for table, cols in fields]
+		cols = iter_flat([cols for table, cols in fields])
+
+		table0, cols0 = fields.pop(0)
+
+		sql = "SELECT {cols} FROM {table0} \n".format(cols=','.join(cols),table0=table0)
+		for table in [table for table,cols in fields]:
+			sql += "INNER JOIN {table} ON {key0} == {key} \n".format(
+						table = table,
+						key0 = '.'.join([table0,key]),
+						key = '.'.join([table,key])
+					)
+
+		return self.cur.execute(sql)
+
+
+	def group_count(self, table, key):
+		return self.cur.execute("""SELECT {key}, count(*) AS count FROM {table} GROUP BY {key}
+			""".format(key=key,table=table)).fetchall()
+
+	def get_newsIDs(self):
+		return self.single_cur.execute("SELECT newsID FROM newsInfo").fetchall()
+
+	def get_news_by_ID(self, newsID, orderBy='time Desc, idx ASC'):
+		if isinstance(newsID, str):
+			newsIDs = [newsID,]
+		elif isinstance(newsID, (list,tuple,set)):
+			newsIDs = list(newsID)
+		return self.cur.execute("""
+				SELECT 	title,
+						date(masssend_time) AS time,
+						cover AS cover_url,
+						content_url AS news_url,
+						newsID
+				FROM newsInfo
+				WHERE newsID in (%s)
+				ORDER BY %s
+			""" % (','.join('?'*len(newsIDs)), orderBy), newsIDs).fetchall()
+
 
 	def build_table_newsInfo(self, rebuild=False, fromCache=False):
 		"""构造群发图文信息表"""
@@ -151,7 +229,7 @@ class SQliteDB(object):
 					news.update({"masssend_time": datetime.fromtimestamp(masssend_time)})
 					newsDicts.append(news)
 
-			self.create_table("newsInfo", rebuild=rebuild)
+			# self.create_table("newsInfo", rebuild=rebuild) # insert or replace 不需要重建表
 			self.insert_many("newsInfo", newsDicts)
 			logger.info("Table newsInfo Create Success !")
 
@@ -169,6 +247,25 @@ class SQliteDB(object):
 			self.create_table("newsContent", rebuild=rebuild)
 			self.insert_many("newsContent", newsContents)
 			logger.info("Table newsContent Create Success !")
+		except Exception as err:
+			raise err
+
+	def build_table_newsDetail(self): # 基于 newsInfo
+		try:
+			newsDetail = self.select("newsInfo",("newsID","title")).fetchall()
+			re_square_brackets = re.compile(r'^【(.*?)】')
+			re_pipe = re.compile(r'[|｜〡丨]')
+			for news in newsDetail:
+				title = news.pop("title")
+				if re_square_brackets.match(title):
+					column = re_square_brackets.match(title).group(1)
+				else:
+					column = re_pipe.split(title)[0]
+				news.update({"column": column})
+
+			self.create_table("newsDetail", rebuild=True)
+			self.insert_many("newsDetail", newsDetail)
+			logger.info("Table newsDetail Create Success !")
 		except Exception as err:
 			raise err
 
@@ -256,7 +353,7 @@ class WxSpider(object):
 
 
 if __name__ == '__main__':
-
+	'''
 	parser = OptionParser()
 	parser.add_option("-t", "--token", dest="token")
 	parser.add_option("-c", "--cookies", dest="cookies")
@@ -271,3 +368,10 @@ if __name__ == '__main__':
 			db.build_table_newsContent(rebuild=True,fromCache=False)
 		WhooshIdx().create_idx()
 		logger.info("update done !")
+
+		'''
+
+
+
+	with SQliteDB() as db:
+		db.build_table_newsDetail()

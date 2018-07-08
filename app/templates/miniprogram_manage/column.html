@@ -1,0 +1,166 @@
+{% extends "miniprogram_manage/base.html" %}
+{% block title %}Column{% endblock title %}
+
+{% block body %}
+		<div class="row">
+			<div class="col-12">
+				<h2>栏目分类</h2>
+				<p>这里是分栏目的图文</p>
+			</div>
+		</div>
+		<div class="row">
+			<div class="col">
+				<nav class="pagination pagination-sm float-left">
+					<ul class="pagination">
+						<li class="page-item {% if thisPage == 1 %}disabled{% endif %}">
+							<a class="page-link" href="{{ url_for('miniprogram_manage.column_list',page=thisPage-1,column=thisColumn) }}">Previous</a>
+						</li>
+						<li class="page-item {% if thisPage == pageNum %}disabled{% endif %}">
+							<a class="page-link" href="{{ url_for('miniprogram_manage.column_list',page=thisPage+1,column=thisColumn) }}">Next</a>
+						</li>
+					{% for page in range(1,pageNum+1) %}
+						<li class="page-item {% if page == thisPage %}active{% endif %}">
+							<a class="page-link" href="{{ url_for('miniprogram_manage.column_list',page=page,column=thisColumn) }}">{{ page }}</a>
+						</li>
+					{% endfor %}
+					</ul>
+				</nav>
+			</div>
+			<div class="col">
+				<nav class="pagination pagination-sm float-right">
+					{% for column in columns %}
+						<li class="page-item {% if column == thisColumn %}active{% endif %}">
+							<a class="page-link" href="{{ url_for('miniprogram_manage.column_list',page=1,column=column) }}">{{ column }}</a>
+						</li>
+					{% endfor %}
+					</ul>
+				</nav>
+			</div>
+		</div>
+		<div class="row">
+			<div class="col-12">
+				<table class="table table-sm table-responsive-md table-hover">
+					<thead class="thead-light">
+						<tr>
+							<th>NewsID</th>
+							<th>Time</th>
+							<th>Column &nbsp;&nbsp;<button type="button" class="btn btn-sm btn-primary" locked="0" onclick="tapLockColumnBtn(this);return false;">Lock</button></th>
+							<th class="w-50">Title</th>
+							<th>Read</th>
+							<th>Like</th>
+							<th>In_Use</th>
+						</tr>
+					</thead>
+					<tbody>
+					{% for news in newsInfo %}
+					{% set inUse = news.in_use %}
+						<tr class="text-{% if inUse %}dark{% else %}muted{% endif %}" news-id="{{ news.newsID }}">
+							<td class="font-weight-bold">{{ news.newsID }}</td>
+							<td>{{ news.masssend_time[:10] }}</td>
+							<td>
+								<form class="form-inline">
+									<div class="form-row mx-sm-2">
+									<input class="form-control form-control-sm" style="width: 72px;" type="text" name="column" value="{{ news.column[:8] }}" required="required">
+									</div>
+									<div class="form-row">
+										<button class="btn btn-sm btn-outline-primary" onclick="tapChangeColumnBtn(this);return false;">Change</button>
+									</div>
+								</form>
+							</td>
+							<td class="url"><a href="{{ news.content_url }}" target="_blank" class="text-{% if inUse %}primary{% else %}light{% endif %}">{{ news.title }}</a></td>
+							<td>{{ news.read_num }}</td>
+							<td>{{ news.like_num }}</td>
+							<td>
+								<button type="button" class="btn btn-outline-{% if inUse %}primary{% else %}success{% endif %}" onclick="tapUseBtn(this);" in-use="{{ inUse }}">{% if inUse %}Discard{% else %}Use{% endif %}</button>
+							</td>
+						</tr>
+					{% endfor %}
+					</tbody>
+				</table>
+			</div>
+		</div>
+
+{% endblock body %}
+
+{% block script %}
+
+<script type="text/javascript">
+	"use strict";
+
+	$('form input').blur(function() {
+		tapChangeColumnBtn(this);
+	});
+
+	function tapUseBtn(dom) {
+		let btn = $(dom);
+		let inUse = parseInt(btn.attr("in-use"));
+		axios.post("{{ url_for('miniprogram_manage.change') }}",{
+			newsID: btn.parents("tr").attr("news-id"),
+			key: "in_use",
+			value: !inUse, // 返回相反值
+		}).then((resp)=>{
+			if (resp.data.errcode === 0) {
+				btn.toggleClass("btn-outline-success btn-outline-primary");
+				btn.parents("tr").toggleClass("text-dark text-muted");
+				btn.parent().siblings(".url").find("a").toggleClass("text-primary text-light");
+				btn.text(!inUse ? 'Discard' : 'Use');
+				btn.attr("in-use", !inUse ? 1 : 0);
+			} else {
+				throw new Error(resp.data);
+			};
+		}).catch((err)=>{
+			throw new Error(err);
+			alert('XHR Error !')
+		});
+	};
+
+	function tapLockColumnBtn(dom) {
+		let btn = $(dom);
+		let locked = parseInt(btn.attr("locked"));
+		btn.toggleClass("btn-primary btn-success");
+		$("tbody .form-row > button").toggleClass("btn-outline-primary btn-outline-muted");
+		btn.text(!locked ? 'Unlock' : 'Lock');
+		if (!locked) {
+			$("tbody input[type=text]").attr("disabled","disabled");
+			$("tbody .form-row > button").attr("disabled","disabled");
+		} else {
+			$("tbody input[type=text]").removeAttr("disabled");
+			$("tbody .form-row > button").removeAttr("disabled");
+		};
+		btn.attr("locked", !locked ? 1 : 0);
+	};
+
+	function tapChangeColumnBtn(dom) {
+		let btn = $(dom);
+		let val = btn.parents("td").find("input").val();
+		if (val === '') return;
+		axios.post("{{ url_for('miniprogram_manage.change') }}",{
+			newsID: btn.parents("tr").attr("news-id"),
+			key: "column",
+			value: val, // 返回相反值
+		}).then((resp)=>{
+			if (resp.data.errcode === 0) {
+				return;
+			} else {
+				throw new Error(resp.data);
+				alert('XHR Error !');
+			};
+		}).catch((err)=>{
+			throw new Error(err);
+			alert('XHR Error !');
+		});
+	};
+
+</script>
+
+{% if thisColumn != '其他' %}
+<script type="text/javascript">
+	let btn = $('thead tr button');
+	console.log(btn);
+	tapLockColumnBtn(btn);
+</script>
+{% endif %}
+
+{% endblock script %}
+
+

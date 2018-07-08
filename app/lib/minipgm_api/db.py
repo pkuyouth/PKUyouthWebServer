@@ -1,13 +1,13 @@
-#!/usr/bin/env python3 
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# filename: minipgm_api_db.py
+# filename: minipgm_api/db.py
 
-import os 
+import os
+import sys
 
-basedir = os.path.join(os.path.dirname(__file__),"../") # app根目录
+basedir = os.path.join(os.path.dirname(__file__),"../../") # app根目录
 cachedir = os.path.join(basedir,"cache")
 secretdir = os.path.join(basedir,"../secret")
-
 
 import sqlite3
 import pymongo
@@ -21,14 +21,13 @@ from whoosh.index import open_dir
 from whoosh.fields import Schema, NUMERIC, TEXT #不可import × 否则与datetime冲突！
 from whoosh.qparser import QueryParser, MultifieldParser
 
-try:
-	from commonfuncs import dictToESC, pkl_load
-	from commonclass import Logger
-except (ImportError, SystemError):
-	from .commonfuncs import dictToESC, pkl_load
-	from .commonclass import Logger
+# 从外部调用时这样引用
+from ..commonfuncs import dictToESC, pkl_load
+from ..commonclass import Logger
+from .error import *
 
-logger = Logger()
+
+logger = Logger(__name__)
 
 
 __all__ = [
@@ -102,12 +101,9 @@ class MongoDB(object):
 
 		newsCol = user['newsCol']
 
-		logger(newsCol)
-		logger([newsID,action])
-
 		if action == "star":
 			newsCol.append({
-				"newsID": newsID, 
+				"newsID": newsID,
 				"actionTime": actionTime
 			})
 		elif action == "unstar":
@@ -118,33 +114,12 @@ class MongoDB(object):
 		logger(newsCol)
 
 
-class WhooshIdx(object):
-	def __init__(self):
-		self.indexname = "news_index_whoosh"
-		self.idxDir = os.path.join(basedir,"database",self.indexname)
-		self.ix = open_dir(self.idxDir, indexname=self.indexname)
-		self.searcher = self.ix.searcher()
-
-	def __enter__(self):
-		return self
-
-	def __exit__(self, type, value, trace):
-		pass
-
-	def search_strings(self, querystring, fields ,limit): 
-		parser = MultifieldParser(fields, schema=self.ix.schema)
-		query = parser.parse(querystring)
-		hits = self.searcher.search(query,limit=limit)
-		return [(hit["newsID"],hit.rank) for hit in hits]
-
-newsIdx = WhooshIdx()
-
-
 class SQLiteDB(object):
+
+	dbLink = os.path.join(basedir,"database","pkuyouth.db")
+
 	def __init__(self):
-		self.dbLink = os.path.join(basedir,"database","pkuyouth.db")
-		self.dbConn = sqlite3.connect(self.dbLink)
-		self.dbCursor = self.dbConn.cursor()
+		self.con = sqlite3.connect(self.dbLink)
 
 	def __enter__(self):
 		return self
@@ -153,43 +128,64 @@ class SQLiteDB(object):
 		self.close()
 
 	def close(self):
-		#self.dbConn.commit() #关闭时提交一次
-		self.dbCursor.close()
-		self.dbConn.close()
-	
+		self.con.close()
+
+
+	@property
+	def cur(self):
+		cur = self.con.cursor()
+		cur.row_factory = self.Dict_Factory
+		return cur
+
+	@property
+	def single_cur(self):
+		cur = self.con.cursor()
+		cur.row_factory = self.Single_Factory
+		return cur
+
+	@property
+	def Dict_Factory(self):
+		return lambda cur,row: dict(zip([col[0] for col in cur.description],row))
+
+	@property
+	def Single_Factory(self):
+		return lambda cur,row: row[0]
+
+	def select(self, table, fields=()):
+		return self.cur.execute("SELECT %s FROM %s" % (",".join(fields), table))
+
 	def get_news_by_ID(self, newsID, orderBy='time Desc, idx ASC'):
 		if isinstance(newsID, str):
-			pass 
+			newsIDs = [newsID,]
 		elif isinstance(newsID, (list,tuple,set)):
-			newsID = ",".join([str(aNewsId) for aNewsId in list(newsID)])
-		self.dbCursor.execute("""
-				SELECT title, date(masssend_time) AS time, cover, content_url, newsID FROM newsInfo
-				WHERE newsID in ({newsID})
-				ORDER BY {orderBy}
-			""".format(newsID=newsID, orderBy=orderBy))
-		return [dictToESC(dict(zip(["title","time","cover_url","news_url","newsID"],row)),
-			["title","cover_url","news_url"],reverse=True) for row in self.dbCursor]
-		
+			newsIDs = list(newsID)
+		return self.cur.execute("""
+				SELECT 	title,
+						date(masssend_time) AS time,
+						cover AS cover_url,
+						content_url AS news_url,
+						newsID
+				FROM newsInfo
+				WHERE newsID in (%s)
+				ORDER BY %s
+			""" % (','.join('?'*len(newsIDs)), orderBy), newsIDs).fetchall()
 
 	def get_newsIDs(self):
-		self.dbCursor.execute("""SELECT newsID FROM newsInfo""")
-		return {row[0] for row in self.dbCursor}
+		return self.single_cur.execute("SELECT newsID FROM newsInfo").fetchall()
 
 	def get_random_news(self, count):
-		self.dbCursor.execute("""SELECT count(*) FROM newsInfo""") # 获得总数
-		minId, maxId = 1, self.dbCursor.fetchone()[0]
-		newsIDs = [random.randint(minId, maxId) for i in range(count)]
+		newsIDs = random.sample(self.get_newsIDs(),count)
 		return self.get_news_by_ID(newsIDs), newsIDs
 
 	def search_news(self, keyword, limit):
-		resultsList = newsIdx.search_strings(
+		resultsList = WhooshIdx().search_strings(
 			querystring = " OR ".join(keyword.strip().split()), # 以 OR 连接空格分开的词
 			fields = ["title","content"],
 			limit = limit,
 		)
 		newsIDs = [hit[0] for hit in resultsList]
 		newsInfo = self.get_news_by_ID(newsIDs, orderBy="newsID")
-		resultsList.sort(key=lambda hit: hit[0]) #同时按newsID排序两个文章列表，再按rank重新排序	
+		resultsList.sort(key=lambda hit: hit[0]) #同时按newsID排序两个文章列表，再按rank重新排序
 		for news, hit in zip(newsInfo,resultsList):
 			news.update({"rank": hit[1]}) #添加rank字段用于后续排序
 		newsInfo.sort(key=lambda news: news["rank"]) #搜索结果按rank排序
@@ -222,3 +218,23 @@ class SQLiteDB(object):
 			news.update({"rank": newsDict[news["newsID"]]})
 		newsInfo.sort(key=lambda news: news["rank"], reverse=True)
 		return newsInfo, newsIDs
+
+
+class WhooshIdx(object):
+	def __init__(self):
+		self.indexname = "news_index_whoosh"
+		self.idxDir = os.path.join(basedir,"database",self.indexname)
+		self.ix = open_dir(self.idxDir, indexname=self.indexname)
+		self.searcher = self.ix.searcher()
+
+	def __enter__(self):
+		return self
+
+	def __exit__(self, type, value, trace):
+		pass
+
+	def search_strings(self, querystring, fields ,limit):
+		parser = MultifieldParser(fields, schema=self.ix.schema)
+		query = parser.parse(querystring)
+		hits = self.searcher.search(query,limit=limit)
+		return [(hit["newsID"],hit.rank) for hit in hits]
