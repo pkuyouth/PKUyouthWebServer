@@ -14,9 +14,9 @@ import string
 import matplotlib.pyplot as plt
 
 try:
-	from .commonfuncs import write_csv, read_csv, show_status, pkl_load, pkl_dump, isChinese #从别的包调用
+	from .utilfuncs import write_csv, read_csv, show_status, pkl_load, pkl_dump, isChinese #从别的包调用
 except (SystemError, ImportError): #如果失败，则说明直接调用
-	from commonfuncs import write_csv, read_csv, show_status, pkl_load, pkl_dump, isChinese
+	from utilfuncs import write_csv, read_csv, show_status, pkl_load, pkl_dump, isChinese
 
 basedir = os.path.abspath(os.path.join(os.path.dirname(__file__),"..")) # 根目录为app
 cachedir = os.path.join(basedir,"cache")

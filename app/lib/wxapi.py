@@ -1,7 +1,7 @@
-#!/usr/bin/env python3 
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # filename: /lib/wxapi.py
-# 
+#
 
 
 import os
@@ -12,10 +12,10 @@ secretdir = os.path.join(basedir,"../secret/")
 
 import requests
 
-from .commonfuncs import pkl_load
-from .commonclass import Logger
+from .utilfuncs import pkl_load
+from .utilclass import Logger
 
-logger = Logger()
+logger = Logger(__name__)
 logger.console_log = False
 
 

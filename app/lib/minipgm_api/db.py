@@ -9,21 +9,15 @@ basedir = os.path.join(os.path.dirname(__file__),"../../") # app根目录
 cachedir = os.path.join(basedir,"cache")
 secretdir = os.path.join(basedir,"../secret")
 
-import sqlite3
-import pymongo
 import random
-import numpy as np
-
-import jieba
-jieba.initialize()
 
 from whoosh.index import open_dir
 from whoosh.fields import Schema, NUMERIC, TEXT #不可import × 否则与datetime冲突！
 from whoosh.qparser import QueryParser, MultifieldParser
 
 # 从外部调用时这样引用
-from ..commonfuncs import dictToESC, pkl_load
-from ..commonclass import Logger
+from ..utilfuncs import pkl_load, get_MD5
+from ..utilclass import Logger, MongoDB, SQLiteDB
 from .error import *
 
 
@@ -31,57 +25,93 @@ logger = Logger(__name__)
 
 
 __all__ = [
-	"MongoDB",
-	"SQLiteDB",
+	"UserDB",
+	"NewsDB",
+	"ReporterDB",
 ]
 
 
-class MongoDB(object):
+class WhooshIdx(object):
+	def __init__(self):
+		self.indexname = "news_index_whoosh"
+		self.idxDir = os.path.join(basedir,"database",self.indexname)
+		self.ix = open_dir(self.idxDir, indexname=self.indexname)
+		self.searcher = self.ix.searcher()
 
-	def __init__(self, db="PKUyouth", col="user"):
-		self.client = pymongo.MongoClient()
-		self.use_db(db)
+	def search_strings(self, querystring, fields ,limit):
+		parser = MultifieldParser(fields, schema=self.ix.schema)
+		query = parser.parse(querystring)
+		hits = self.searcher.search(query,limit=limit)
+		return [(hit["newsID"],hit.rank) for hit in hits]
+
+
+newsIdx = WhooshIdx()
+
+
+class NewsDB(SQLiteDB):
+
+
+	def get_random_news(self, count):
+		newsIDs = random.sample(self.get_newsIDs(),count)
+		return self.get_news_by_ID(newsIDs)
+
+	def get_latest_news(self, count):
+		newsInfo = self.get_news_by_ID(self.get_newsIDs())[:count]
+		digests = self.select("newsContent",("newsID","digest")).fetchall()
+		digestsDict = {news["newsID"]:news["digest"] for news in digests}
+		for news in newsInfo:
+			news["digest"] = digestsDict[news["newsID"]]
+
+		return [{k:v for k,v in news.items()
+			if k in ["newsID","title","digest","time","cover_url","news_url"]} for news in newsInfo]
+
+	def get_hot_news(self):
+		return self.get_news_by_ID(self.get_newsIDs(),orderBy='read_num DESC ,time DESC, idx ASC')
+
+	def get_column_news(self, column):
+		newsIDs = [news["newsID"] for news in self.select("newsDetail",("newsID","column")).fetchall()
+						if news["column"] == column]
+		newsInfo =  self.get_news_by_ID(newsIDs)
+		newsInfo.sort(key=lambda news: news["read_num"],reverse=True)
+		return newsInfo
+
+	def search_news(self, keyword, limit):
+		resultsList = newsIdx.search_strings(
+			querystring = " OR ".join(keyword.strip().split()), # 以 OR 连接空格分开的词
+			fields = ["title","content"],
+			limit = limit,
+		)
+		newsIDs = [hit[0] for hit in resultsList]
+		newsInfo = self.get_news_by_ID(newsIDs)
+		newsInfo.sort(key=lambda item: item["newsID"])
+		resultsList.sort(key=lambda hit: hit[0]) #同时按newsID排序两个文章列表，再按rank重新排序
+		for news, hit in zip(newsInfo,resultsList):
+			news.update({"rank": hit[1]}) #添加rank字段用于后续排序
+		newsInfo.sort(key=lambda news: news["rank"]) #搜索结果按rank排序
+		return newsInfo
+
+
+class UserDB(MongoDB):
+
+	def __init__(self, col="user"):
+		MongoDB.__init__(self)
 		self.use_col(col)
 
-	def __enter__(self):
-		return self
-
-	def __exit__(self, type, value, trace):
-		pass
-
-	def close(self):
-		self.db.logout()
-		self.client.close()
-
-	def use_db(self, dbName):
-		self.db = self.client[dbName]
-
-	def use_col(self, col):
-		self.col = self.db[col]
-
-	def insert_one(self, post):
-		return self.col.insert_one(post)
-
-	def find_one(self, where):
-		return self.col.find_one(where)
-
-	def update_one(self, where, update):
-		return self.col.update_one(where, {'$set':update})
-
-	def col_structure(self, openid):
+	def init_row(self, openid):
 		return {
 			"_id": openid,
-			"newsCol": [], # 文章收藏 , 这里的控列表会转为 None ?!
+			"newsCol": [], # 文章收藏
+			"starRpt": [], # 点赞了哪些作者
 		}
 
 	def add_user(self, openid):
-		self.insert_one(self.col_structure(openid))
+		self.insert_one(self.init_row(openid))
 
 	def get_user(self, openid):
 		return self.find_one({"_id": openid})
 
 	def has_user(self, openid):
-		return True if self.find_one({"_id": openid}) else False
+		return True if self.get_user(openid) else False
 
 	def register(self, openid):
 		if not self.has_user(openid):
@@ -111,130 +141,62 @@ class MongoDB(object):
 
 		self.update_one({'_id':openid},{'newsCol':newsCol})
 
-		logger(newsCol)
+	def get_starRpt(self, openid):
+		return self.get_user(openid)["starRpt"]
+
+	def update_starRpt(self, openid, name, action):
+		user = self.get_user(openid)
+		if user is None:
+			raise UnregisteredError('unregistered user !')
+
+		starRpt = user['starRpt']
+
+		if action == "star":
+			starRpt.append(name)
+		elif action == "unstar":
+			starRpt.remove(name)
+
+		self.update_one({"_id":openid},{"starRpt":starRpt})
 
 
-class SQLiteDB(object):
+class ReporterDB(MongoDB):
 
-	dbLink = os.path.join(basedir,"database","pkuyouth.db")
+	def __init__(self, col="reporter"):
+		MongoDB.__init__(self)
+		self.use_col(col)
 
-	def __init__(self):
-		self.con = sqlite3.connect(self.dbLink)
+	def init_row(self, name, realName='', newsIDs=[]):
+		return {
+			"_id": get_MD5(name),
+			"name": name,
+			"realName": realName, # 如果不是化名则存为 None
+			"newsIDs": newsIDs,
+			"avatar": "", # 头像
+			"desc": "", # 作者描述
+			"like": 0, # 点赞数
+		}
 
-	def __enter__(self):
-		return self
+	def add_rpt(self, name, newsIDs):
+		self.insert_one(self.init_row(name, newsIDs=newsIDs))
 
-	def __exit__(self, type, value, trace):
-		self.close()
+	def get_rpt(self, name, keys=()):
+		return {k:v for k,v in  self.find_one({"_id": get_MD5(name)},keys=keys).items() if k != '_id'}
 
-	def close(self):
-		self.con.close()
+	def get_rpts(self, keys=()):
+		return [{k:v for k,v in rpt.items() if k != '_id'}
+			for rpt in self.find_many(keys=keys)]
 
+	def has_rpt(self, name):
+		return True if self.get_rpt(name) else False
 
-	@property
-	def cur(self):
-		cur = self.con.cursor()
-		cur.row_factory = self.Dict_Factory
-		return cur
+	def get_names(self):
+		return [rpt['name'] for rpt in self.find_many()]
 
-	@property
-	def single_cur(self):
-		cur = self.con.cursor()
-		cur.row_factory = self.Single_Factory
-		return cur
+	def update_like(self, name, action):
+		like = self.get_rpt(name)["like"]
+		if action == 'star':
+			like += 1
+		elif action == 'unstar':
+			like -= 1
 
-	@property
-	def Dict_Factory(self):
-		return lambda cur,row: dict(zip([col[0] for col in cur.description],row))
-
-	@property
-	def Single_Factory(self):
-		return lambda cur,row: row[0]
-
-	def select(self, table, fields=()):
-		return self.cur.execute("SELECT %s FROM %s" % (",".join(fields), table))
-
-	def get_news_by_ID(self, newsID, orderBy='time Desc, idx ASC'):
-		if isinstance(newsID, str):
-			newsIDs = [newsID,]
-		elif isinstance(newsID, (list,tuple,set)):
-			newsIDs = list(newsID)
-		return self.cur.execute("""
-				SELECT 	title,
-						date(masssend_time) AS time,
-						cover AS cover_url,
-						content_url AS news_url,
-						newsID
-				FROM newsInfo
-				WHERE newsID in (%s)
-				ORDER BY %s
-			""" % (','.join('?'*len(newsIDs)), orderBy), newsIDs).fetchall()
-
-	def get_newsIDs(self):
-		return self.single_cur.execute("SELECT newsID FROM newsInfo").fetchall()
-
-	def get_random_news(self, count):
-		newsIDs = random.sample(self.get_newsIDs(),count)
-		return self.get_news_by_ID(newsIDs), newsIDs
-
-	def search_news(self, keyword, limit):
-		resultsList = WhooshIdx().search_strings(
-			querystring = " OR ".join(keyword.strip().split()), # 以 OR 连接空格分开的词
-			fields = ["title","content"],
-			limit = limit,
-		)
-		newsIDs = [hit[0] for hit in resultsList]
-		newsInfo = self.get_news_by_ID(newsIDs, orderBy="newsID")
-		resultsList.sort(key=lambda hit: hit[0]) #同时按newsID排序两个文章列表，再按rank重新排序
-		for news, hit in zip(newsInfo,resultsList):
-			news.update({"rank": hit[1]}) #添加rank字段用于后续排序
-		newsInfo.sort(key=lambda news: news["rank"]) #搜索结果按rank排序
-		return newsInfo, newsIDs
-
-	def recommend_news(self, newsID, limit):
-		wordFrags = pkl_load(cachedir,"wordFrags.pkl",log=False)
-		wordsList = pkl_load(cachedir,"wordsList.pkl",log=False)
-		wordsSet = frozenset(wordsList)
-		binarize = pkl_load(cachedir,"binarize.pkl",log=False)
-
-		newsBin = {word: 0 for word in wordsList}
-		for word in wordFrags[newsID]:
-			if word in wordsSet:
-				newsBin[word] = 1
-		thisBin = np.array([newsBin[word] for word in wordsList])
-
-		tcs = dict()
-		for _newsID, otherBin in binarize.items():
-			dot = np.dot(thisBin, otherBin)
-			Tc = dot / (np.sum(thisBin) + np.sum(otherBin) - dot)
-			if Tc not in {0,1}: # 去掉重发文和完全无关文
-				tcs[_newsID] = Tc
-		tops = list(sorted(tcs.items(), key=lambda item: item[1], reverse=True))[:limit]
-
-		newsDict = {newsID:rank for newsID,rank in tops}
-		newsIDs = list(newsDict.keys())
-		newsInfo = self.get_news_by_ID(newsIDs)
-		for news in newsInfo:
-			news.update({"rank": newsDict[news["newsID"]]})
-		newsInfo.sort(key=lambda news: news["rank"], reverse=True)
-		return newsInfo, newsIDs
-
-
-class WhooshIdx(object):
-	def __init__(self):
-		self.indexname = "news_index_whoosh"
-		self.idxDir = os.path.join(basedir,"database",self.indexname)
-		self.ix = open_dir(self.idxDir, indexname=self.indexname)
-		self.searcher = self.ix.searcher()
-
-	def __enter__(self):
-		return self
-
-	def __exit__(self, type, value, trace):
-		pass
-
-	def search_strings(self, querystring, fields ,limit):
-		parser = MultifieldParser(fields, schema=self.ix.schema)
-		query = parser.parse(querystring)
-		hits = self.searcher.search(query,limit=limit)
-		return [(hit["newsID"],hit.rank) for hit in hits]
+		self.update_one({"_id": get_MD5(name)},{"like": like})

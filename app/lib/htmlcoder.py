@@ -1,4 +1,4 @@
-#!/usr/bin/env python3 
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # filename: htmlcoder.py
 
@@ -7,9 +7,9 @@ from zipfile import ZipFile
 import re
 from bs4 import BeautifulSoup
 try:
-	from .commonfuncs import get_MD5 #从别的包调用
+	from .utilfuncs import get_MD5 #从别的包调用
 except (SystemError, ImportError): #如果失败，则说明直接调用
-	from commonfuncs import get_MD5
+	from utilfuncs import get_MD5
 
 basedir = os.path.abspath(os.path.join(os.path.dirname(__file__),"..")) # 根目录为app
 
@@ -54,7 +54,7 @@ class XMLparser(object):
 		"""根据xml解析style-id-name"""
 		relDict = dict()
 		for soup in BeautifulSoup(self.stylesRelsXml,"lxml-xml").find_all("w:style"):
-			styleId = soup.get("w:styleId") 
+			styleId = soup.get("w:styleId")
 			styleName = soup.find("w:name").get("w:val") # 保存style的id与其对应名称的映射关系
 			relDict[styleId] = styleName
 		return relDict
@@ -66,9 +66,9 @@ class XMLparser(object):
 			return imgPath
 		else:
 			imgFmt = imgPath[imgPath.rindex(".")+1:] # 图片格式
-			imgName = "{}.{}".format(self._get_img_name(imgPath),imgFmt) 
+			imgName = "{}.{}".format(self._get_img_name(imgPath),imgFmt)
 			self.imgNames[imgId] = imgName # 保存文件名
-			return "/static/upload/htmlcoder/%s" % imgName # 返回浏览器的访问路径 
+			return "/static/upload/htmlcoder/%s" % imgName # 返回浏览器的访问路径
 
 	def _get_img_name(self,imgPath):
 		"""计算图片MD5并以之作为文件名返回"""
@@ -94,7 +94,7 @@ class XMLparser(object):
 		for imgId, imgName in self.imgNames.items():
 			if imgName in uploadDirSet: # 说明是重复图片
 				continue
-			else: 
+			else:
 				imgPath = self.imgRels[imgId] # 获得docx文件内部的img路径
 				with open(os.path.join(self.uploadDir,imgName),"wb") as fp: # 将docx的图片保存到本地
 					fp.write(self.docx.open(os.path.join("word",imgPath)).read())
@@ -105,7 +105,7 @@ class HTMLcoder(object):
 
 	def __init__(self, **kw):
 		self.soup = BeautifulSoup("","lxml") # 基础的soup ，用于create ，保证同源
-		self.xmls = XMLparser() 
+		self.xmls = XMLparser()
 		self.headSec = self.tag("section","head-box") # 正文前部分
 		self.bodySec = self.tag("section","head-box") # 正文部分
 		self.tailSec = self.tag("section","tail-box") # 文末部分
@@ -178,7 +178,7 @@ class HTMLcoder(object):
 		if text != None:
 			newTag.append(self.soup.new_string(text)) # 生成文字节点
 		if isinstance(attrs,dict): # 添加多属性
-			for attr, val in attrs.items(): 
+			for attr, val in attrs.items():
 				newTag[attr] = val
 			return newTag
 		elif isinstance(attrs,str) or isinstance(attrs,list): #默认为声明class
@@ -192,7 +192,7 @@ class HTMLcoder(object):
 			空行
 
 			@[n] int 一次生成n个空行，默认为1个
-			
+
 		"""
 		sec = self.tag("section","br") # br 类
 		br = self.tag("br")
@@ -208,7 +208,7 @@ class HTMLcoder(object):
 		return sec
 
 	def p(self, class_, text, bold=False, br=True):
-		""" 
+		"""
 			正文段
 
 			@[class_] str/list/dict 传递给基础tag函数的attrs变量
@@ -223,7 +223,7 @@ class HTMLcoder(object):
 			p.string.wrap(self.tag("strong"))
 		sec.append(p)
 		if br: #默认空一行
-			sec.append(self.br()) 
+			sec.append(self.br())
 		return sec
 
 	def img(self, pSoup, br=True):
@@ -231,7 +231,7 @@ class HTMLcoder(object):
 			图片
 
 			@[pSoup] bs4Tag 当前段落的soup
-			@[br] bool 是否自动空一行，默认True为其下自动空一行 
+			@[br] bool 是否自动空一行，默认True为其下自动空一行
 
 		"""
 
@@ -288,7 +288,7 @@ class HTMLcoder(object):
 			@[header] bool 是否为标题“参考资料”，默认False
 
 		"""
-		if header: 
+		if header:
 			p = self.tag("p","r15-ref",text) # r15-ref 类，参考文献标题的15号红字
 			sec = self.tag("section","p-ref") # p-ref 类，参考文献段
 			sec.append(p)
@@ -361,7 +361,7 @@ class HTMLcoder(object):
 	def _get_align(self, pSoup):
 		"""获取当前段落的对齐方式"""
 		if pSoup.find("w:jc"):
-			return pSoup.find("w:jc").get("w:val") 
+			return pSoup.find("w:jc").get("w:val")
 		else:
 			return "left" # 没有设置，则默认为左对齐
 
@@ -375,7 +375,7 @@ class HTMLcoder(object):
 			elif val == "false": #制定为false，为非加粗段
 				return False
 			else: #有值，但非false
-				return True 
+				return True
 		else: #未发现<w:b/>
 			return False
 
@@ -482,8 +482,8 @@ class HTMLcoder(object):
 			pass
 		elif pSoup.text.strip(): #非空行
 			if self._isBold(pSoup): #加粗，为记者信息标题
-				self.headSec.append(self.pRpt(pSoup.text,header=True))		
-			else: 
+				self.headSec.append(self.pRpt(pSoup.text,header=True))
+			else:
 				self.headSec.append(self.pRpt(pSoup.text))
 		else: #空白行，且无图，直接跳过
 			pass
@@ -526,7 +526,7 @@ class HTMLcoder(object):
 		self.wordSum += len(pSoup.text.strip()) # 统计字数
 
 	def _asTail(self,pSoup):
-		"""将pSoup视为文末段进行处理"""		
+		"""将pSoup视为文末段进行处理"""
 		if pSoup.find(["w:drawing","w:pict"]):
 			self.bottomPict = self.img(pSoup,br=False) # 视为底图，多图则保留最后一张
 		elif pSoup.text.strip():
@@ -557,7 +557,7 @@ class HTMLcoder(object):
 		# 渲染css
 		css = str()
 		css += "section{box-sizing: border-box;}" #统一的设定
-		for class_, style in self.cssDict.items(): 
+		for class_, style in self.cssDict.items():
 			css += ".%s{%s}" % (class_, style) #渲染style标签内的css
 
 		HTML5Frame = """
@@ -602,10 +602,10 @@ class HTMLcoder(object):
 if __name__ == '__main__':
 	#测试用
 	params = {
-		'noRpt': False, 
-		'noRef': True, 
-		'countWord': True, 
-		'countPict': False, 
+		'noRpt': False,
+		'noRef': True,
+		'countWord': True,
+		'countPict': False,
 		'full': True
 	}
 	HTMLcoder(**params).work()

@@ -14,8 +14,8 @@ from functools import wraps
 
 from flask import request, abort, jsonify, session
 
-from ..commonfuncs import get_secret
-from ..commonclass import Encipher
+from ..utilfuncs import get_secret
+from ..utilclass import Encipher
 from .db import SQLiteDB
 from .error import *
 

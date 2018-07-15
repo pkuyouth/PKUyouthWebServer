@@ -26,8 +26,11 @@
           <tr>
             <th>newsID</th>
             <th>Time</th>
+            <th>Column</th>
             <th>Reporter</th>
-            <th class="w-50">Title</th>
+            <th>Title</th>
+            <th>Read</th>
+          ` <th>Like</th>
             <th>In_Use</th>
           </tr>
         </thead>
@@ -37,17 +40,20 @@
           <tr class="text-{% if inUse %}dark{% else %}muted{% endif %}" news-id="{{ news.newsID }}">
             <td class="font-weight-bold">{{ news.newsID }}</td>
             <td>{{ news.masssend_time[:10] }}</td>
+            <td>{{ news.column[:4] }}</td>
             <td>
               <form class="form-inline">
                 <div class="form-row mx-md-3">
-                 <input class="form-control form-control-sm" type="text" name="column" value="{{ news.reporter }}" required="required" {% if not inUse %}disabled="disabled"{% endif %}>
+                 <input class="form-control form-control-sm" type="text" style="width: 240px" name="column" value="{{ news.reporter }}" required="required" {% if not inUse %}disabled="disabled"{% endif %}>
                 </div>
-                <div class="form-row">
+                <!--<div class="form-row">
                   <button class="btn btn-sm btn-outline-{% if not inUse %}muted{% else %}primary{% endif %}" {% if not inUse %}disabled="disabled"{% endif %} onclick="tapChangeRptBtn(this);return false;" in-use="{{ inUse }}">Change</button>
-                </div>
+                </div>-->
               </form>
             </td>
             <td class="url"><a href="{{ news.content_url }}" target="_blank" class="text-{% if inUse %}primary{% else %}light{% endif %}">{{ news.title }}</a></td>
+            <td>{{ news.read_num }}</td>
+            <td>{{ news.like_num }}</td>
             <td>
               <button type="button" class="btn btn-outline-{% if inUse %}primary{% else %}success{% endif %}" onclick="tapUseBtn(this);" in-use="{{ inUse }}">{% if inUse %}Discard{% else %}Use{% endif %}</button>
             </td>
@@ -55,6 +61,21 @@
         {% endfor %}
         </tbody>
       </table>
+      <nav class="pagination pagination-sm">
+        <ul class="pagination">
+          <li class="page-item {% if thisPage == 1 %}disabled{% endif %}">
+            <a class="page-link" href="{{ url_for('miniprogram_manage.reporter_list',page=thisPage-1) }}">Previous</a>
+          </li>
+          <li class="page-item {% if thisPage == pageNum %}disabled{% endif %}">
+            <a class="page-link" href="{{ url_for('miniprogram_manage.reporter_list',page=thisPage+1) }}">Next</a>
+          </li>
+        {% for page in range(1,pageNum+1) %}
+          <li class="page-item {% if page == thisPage %}active{% endif %}">
+            <a class="page-link" href="{{ url_for('miniprogram_manage.reporter_list',page=page) }}">{{ page }}</a>
+          </li>
+        {% endfor %}
+        </ul>
+      </nav>
     </div>
   </div>
 

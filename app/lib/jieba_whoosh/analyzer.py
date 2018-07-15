@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # filename: analyzer.py
-# 
+#
 # Rabbit 重写的 jieba.analyzer 模板
-# 
+#
 
 # from __future__ import unicode_literals
 from whoosh.analysis import RegexAnalyzer, LowercaseFilter, StopFilter, StemFilter
@@ -13,7 +13,7 @@ from whoosh.lang.porter import stem
 import jieba
 import jieba.analyse
 import re
-import os 
+import os
 import pickle
 
 basedir = os.path.abspath(os.path.dirname(__file__))
@@ -44,10 +44,9 @@ accepted_chars = re.compile(r"[\u4E00-\u9FA5]+") #Unicode基本汉字的编码�
 
 class ChineseTokenizer(Tokenizer):
 	def __init__(self):
-		jieba.enable_parallel(4) #并行分词
 		jieba.analyse.set_stop_words(stopWordsPath)
 
-	def __call__(self, text, **kargs):	
+	def __call__(self, text, **kargs):
 		words = jieba.tokenize(text, mode="search")
 		token = Token()
 		for (w, start_pos, stop_pos) in words:
@@ -60,7 +59,7 @@ class ChineseTokenizer(Tokenizer):
 			yield token
 
 
-def ChineseAnalyzer(stoplist=stop_words, minsize=1, stemfn=stem, cachesize=50000): 
+def ChineseAnalyzer(stoplist=stop_words, minsize=1, stemfn=stem, cachesize=50000):
 	return (ChineseTokenizer() | LowercaseFilter() |
 			StopFilter(stoplist=stoplist, minsize=minsize) |
 			StemFilter(stemfn=stemfn, ignore=None, cachesize=cachesize))
@@ -70,4 +69,3 @@ if __name__ == '__main__':
 	#get_stop_words_pkl()
 	analyzer = ChineseAnalyzer()
 	print([token.text for token in analyzer("百廿纪｜时代净土：科研与教学、诗歌与理想")])
-	

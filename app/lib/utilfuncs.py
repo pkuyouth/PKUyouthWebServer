@@ -37,7 +37,7 @@ __all__ = [
 	"dictToESC",
 	"get_errInfo",
 	"get_MD5",
-	"get_secret"
+	"get_secret",
 ]
 
 
@@ -142,11 +142,6 @@ def iter_flat(origin):
 		else:
 			resultsList.append(item)
 	return resultsList
-
-
-def show_status(iterable, desc="running in iteration ..."):
-	"""封装的tqdm进度条显示函数"""
-	return tqdm(iterable, desc=desc, ncols=0)
 
 
 def isChinese(word):

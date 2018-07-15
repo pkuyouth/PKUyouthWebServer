@@ -5,18 +5,23 @@
 import os
 import sys
 import re
+from datetime import datetime
+from collections import OrderedDict
 import logging
+import sqlite3
+import pymongo
 import smtplib
 from email.mime.text import MIMEText
 from email.utils import formataddr
-from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
 from itsdangerous import JSONWebSignatureSerializer as Serializer
+from whoosh.index import open_dir
+from whoosh.fields import Schema, NUMERIC, TEXT #不可import × 否则与datetime冲突！
+from whoosh.qparser import QueryParser, MultifieldParser
 
-try:
-	from commonfuncs import pkl_load, get_secret
-except (ImportError, SystemError):
-	from .commonfuncs import pkl_load, get_secret
+from utilfuncs import pkl_load, get_secret, iter_flat
+from jieba_whoosh.analyzer import ChineseAnalyzer
+
 
 basedir = os.path.join(os.path.dirname(__file__),"../") # app根目录
 
@@ -25,6 +30,9 @@ __all__ = [
 	"Logger",
 	"Mailer",
 	"Encipher",
+	"MongoDB",
+	"SQLiteDB",
+	#"WhooshIdx",
 ]
 
 
@@ -163,7 +171,7 @@ class Mailer(object):
 	SystemLog_User = "SystemInfo"
 	Contribute_User = "Contribute"
 
-	logger = Logger()
+	logger = Logger(__name__)
 
 
 	@classmethod
@@ -261,3 +269,224 @@ class Encipher(object):
 			return self.check(*self.get_raw(token), raw)
 		except TypeError: # 否则，序列化前为对象
 			return self.get_raw(token)[0] == raw
+
+
+class MongoDB(object):
+
+	def __init__(self, db="PKUyouth"):
+		self.client = pymongo.MongoClient()
+		self.use_db(db)
+		self.__col = None
+
+
+	def __enter__(self):
+		return self
+
+	def __exit__(self, type, value, trace):
+		self.close()
+
+	def close(self):
+		self.db.logout()
+		self.client.close()
+
+	@property
+	def col(self):
+		if self.__col is not None:
+			return self.__col
+		else:
+			return NotImplementedError
+
+	@col.setter
+	def col(self, col):
+		self.__col = col
+
+
+	def use_db(self, db):
+		self.db = self.client[db]
+
+	def use_col(self, col):
+		self.col = self.db[col]
+
+	def insert_one(self, post):
+		return self.col.insert_one(post)
+
+	def find_one(self, where={}, keys=()):
+		keys = dict.fromkeys(keys,1) if keys else None
+		return self.col.find_one(where,keys)
+
+	def find_many(self, where={}, keys=()):
+		keys = dict.fromkeys(keys,1) if keys else None
+		return self.col.find(where,keys)
+
+	def update_one(self, where, update):
+		return self.col.update_one(where, {'$set':update})
+
+	def drop(self):
+		self.col.drop()
+
+	def init_row(self):
+		raise NotImplementedError
+
+
+class SQLiteDB(object):
+
+	dbLink = os.path.join(basedir,"database","pkuyouth.db")
+
+	def __init__(self):
+		self.con = sqlite3.connect(self.dbLink)
+
+	def __enter__(self):
+		return self
+
+	def __exit__(self, type, value, trace):
+		self.close()
+
+	def close(self):
+		self.con.close()
+
+	@property
+	def cur(self):
+		cur = self.con.cursor()
+		cur.row_factory = self.Dict_Factory
+		return cur
+
+	@property
+	def single_cur(self):
+		cur = self.con.cursor()
+		cur.row_factory = self.Single_Factory
+		return cur
+
+	@property
+	def Dict_Factory(self):
+		return lambda cur,row: dict(zip([col[0] for col in cur.description],row))
+
+	@property
+	def Single_Factory(self):
+		return lambda cur,row: row[0]
+
+	@property
+	def Row(self):
+		return sqlite3.Row
+
+
+	def execute(self,*args,**kwargs):
+		return self.cur.execute(*args,**kwargs)
+
+	def executemany(self,*args,**kwargs):
+		return self.cur.executemany(*args,**kwargs)
+
+
+	def select(self, table, cols=()):
+		return self.cur.execute("SELECT %s FROM %s" % (",".join(cols), table))
+
+	def select_join(self, cols=(), key="newsID", newsIDs=None):
+		""" cols 必须指定为 kw 否则传入一个元祖 会视为两个变量 ！！！！!
+			cols = (
+				("newsInfo",("newsID","title","masssend_time AS time")), # 可别名
+				("newsDetail",("column","in_use")),
+				("newsContent",("content","newsID")) # 可重复 key
+			)
+			key = "newsID"
+			newsIDs = [...]
+		"""
+		print(cols)
+		fields = [[table, ['.'.join([table,col]) for col in _cols]] for table, _cols in cols]
+
+		cols = iter_flat([_cols for table, _cols in fields])
+
+
+		table0, cols0 = fields.pop(0)
+
+		sql = "SELECT {cols} FROM {table0} \n".format(cols=','.join(cols),table0=table0)
+		for table in [table for table,cols in fields]:
+			sql += "INNER JOIN {table} ON {key0} == {key} \n".format(
+						table = table,
+						key0 = '.'.join([table0,key]),
+						key = '.'.join([table,key])
+					)
+		if newsIDs is not None:
+			sql += "WHERE {} IN ({})".format('.'.join([table0,key]), ','.join('?'*len(newsIDs)))
+			return self.cur.execute(sql, newsIDs)
+		else:
+			return self.cur.execute(sql)
+
+	def insert_one(self, table, dataDict):
+		k,v = tuple(zip(*dataDict))
+		with self.con:
+			self.con.execute("INSERT OR REPLACE INTO %s (%s) VALUES (%s)"
+				% (table, ",".join(k), ",".join('?'*len(k))), v)
+			self.con.commit()
+
+	def insert_many(self, table, dataDicts):
+		dataDicts = [OrderedDict(sorted(dataDict.items())) for dataDict in dataDicts]
+		k = dataDicts[0].keys()
+		vs = [tuple(dataDict.values()) for dataDict in dataDicts]
+		with self.con:
+			self.con.executemany("INSERT OR REPLACE INTO %s (%s) VALUES (%s)"
+				% (table, ",".join(k), ",".join('?'*len(k))), vs)
+			self.con.commit()
+
+	def update(self, table, newsID, newVal):
+		"""
+			db.update("newsDetail", newsID, {key: value})
+		"""
+		ks, vs = tuple(zip(*newVal.items()))
+		sql =  "UPDATE %s SET " % table
+		sql += ','.join(["%s = ?" % k for k in ks])
+		sql += " WHERE newsID = ?"
+		vals = list(vs) + [newsID]
+		with self.con:
+			self.con.execute(sql,tuple(vals))
+			self.con.commit()
+
+	def count(self, table):
+		return self.single_cur.execute("SELECT count(*) FROM %s" % table).fetchone()
+
+	def group_count(self, table, key):
+		return self.cur.execute("""SELECT {key}, count(*) AS count FROM {table} GROUP BY {key}
+			""".format(key=key,table=table)).fetchall()
+
+
+	def get_news_by_ID(self, newsID, orderBy='time DESC, idx ASC'):
+		if isinstance(newsID, str):
+			newsIDs = [newsID,]
+		elif isinstance(newsID, (list,tuple,set)):
+			newsIDs = list(newsID)
+		return self.cur.execute("""
+				SELECT 	title,
+						date(masssend_time) AS time,
+						cover AS cover_url,
+						content_url AS news_url,
+						like_num,
+						read_num,
+						newsID
+				FROM newsInfo
+				WHERE newsID in (%s)
+				ORDER BY %s
+			""" % (','.join('?'*len(newsIDs)), orderBy), newsIDs).fetchall()
+
+	def get_newsIDs(self):
+		return self.single_cur.execute("SELECT newsID FROM newsInfo").fetchall()
+
+
+class WhooshIdx(object): # 暂时不用
+
+	idxName = "news_index_whoosh"
+	idxDir = os.path.join(basedir,"database",idxName)
+
+	if not os.path.exists(idxDir):
+		os.mkdir(idxDir)
+
+	def __init__(self):
+		self.analyzer = ChineseAnalyzer()
+		self.schema = Schema(
+				newsID = TEXT(stored=True),
+				title = TEXT(stored=True, analyzer=self.analyzer),
+				content = TEXT(stored=True, analyzer=self.analyzer),
+			)
+
+	def __enter__(self):
+		return self
+
+	def __exit__(self, type, value, trace):
+		pass

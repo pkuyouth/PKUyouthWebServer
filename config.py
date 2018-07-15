@@ -5,7 +5,7 @@
 import os
 
 basedir = os.path.abspath(os.path.dirname(__file__))
-from app.lib.commonfuncs import get_secret
+from app.lib.utilfuncs import get_secret
 
 class Config(object):
 	"""基础配置"""

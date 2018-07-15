@@ -13,7 +13,7 @@ cachedir = os.path.join(basedir,"cache")
 secretdir = os.path.join(basedir,"../secret")
 
 
-from ..lib.commonfuncs import pkl_load
+from ..lib.utilfuncs import pkl_load
 
 import hashlib
 

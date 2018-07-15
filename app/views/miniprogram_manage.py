@@ -16,10 +16,10 @@ cachedir = os.path.join(basedir,"cache")
 
 import json
 import sqlite3
+from pypinyin import lazy_pinyin
 
-
-from ..lib.commonfuncs import dictToESC, get_secret, iter_flat
-from ..lib.commonclass import Logger
+from ..lib.utilfuncs import dictToESC, get_secret, iter_flat
+from ..lib.utilclass import Logger, SQLiteDB
 from ..lib.minipgm_api.util import int_param, limited_param, str_param
 
 
@@ -36,8 +36,8 @@ def root():
 
 @miniprogram_manage.route('/news_list',methods=['GET'])
 def news_list():
-	with SQLiteDB() as db:
-		newsInfo = db.select_join(fields=(
+	with NewsDB() as db:
+		newsInfo = db.select_join(cols=(
 			("newsInfo",("newsID","title","masssend_time","read_num","like_num","content_url")),
 			("newsDetail",("column","in_use")),
 		), key="newsID").fetchall()
@@ -57,14 +57,17 @@ def news_list():
 
 @miniprogram_manage.route("/column_list",methods=['GET'])
 def column_list():
-	with SQLiteDB() as db:
-		columns = ("调查","雕龙","光阴","机动","评论","人物","视界","特稿","言己","姿势","其他")
+	with NewsDB() as db:
+		#columns = ["调查","雕龙","光阴","机动","评论","人物","视界","言己","姿势","摄影","现场","又见","节日","未明","图说","征稿","招新","手记","副刊","对话","论衡","休刊","纪念","聚焦燕园","休闲娱乐","社会舆论","校友往事","其他"]
+		columns = ["调查","雕龙","光阴","机动","评论","人物","视界","言己","姿势","摄影","现场","又见","节日","未明","图说","征稿","招新","手记","副刊","对话","论衡","休刊","纪念","聚焦燕园","休闲娱乐","社会舆论","校友往事",]
+		columns.sort(key=lambda column: lazy_pinyin(column))
+		columns.append("其他")
 		groupedNews = {column: db.single_cur.execute("""SELECT newsID FROM newsDetail
 			WHERE column = ?""", (column,)).fetchall() for column in columns}
 		groupedNews.update({"其他": list(set(db.get_newsIDs())-set(iter_flat(list(groupedNews.values()))))})
 		groupedNewsInfo = {}
 		for column, newsIDs in groupedNews.items():
-			groupedNewsInfo[column] = db.select_join(fields=(
+			groupedNewsInfo[column] = db.select_join(cols=(
 					("newsInfo",("newsID","title","masssend_time","read_num","like_num","content_url")),
 					("newsDetail",("column","in_use")),
 				), key="newsID",newsIDs=newsIDs).fetchall()
@@ -92,10 +95,10 @@ def column_list():
 
 @miniprogram_manage.route('/reporter_list',methods=['GET'])
 def reporter_list():
-	with SQLiteDB() as db:
-		newsInfo = db.select_join(fields=(
-			("newsInfo",("newsID","title","masssend_time","content_url")),
-			("newsDetail",("reporter","in_use")),
+	with NewsDB() as db:
+		newsInfo = db.select_join(cols=(
+			("newsInfo",("newsID","title","masssend_time","content_url","read_num","like_num")),
+			("newsDetail",("reporter","column","in_use")),
 		), key="newsID").fetchall()
 
 	maxItemNum = 50
@@ -113,7 +116,7 @@ def reporter_list():
 @miniprogram_manage.route('/change',methods=['POST'])
 def change():
 	try:
-		db = SQLiteDB()
+		db = NewsDB()
 		reqData = request.json
 		key = limited_param("key",reqData.get("key"), ['in_use','column','reporter'])
 		value = reqData.get("value")
@@ -132,104 +135,7 @@ def change():
 		return jsonify(jsonPack)
 
 
-class SQLiteDB(object):
-
-	dbLink = os.path.join(basedir,"database","pkuyouth.db")
+class NewsDB(SQLiteDB):
 
 	def __init__(self):
-		self.con = sqlite3.connect(self.dbLink)
-
-	def __enter__(self):
-		return self
-
-	def __exit__(self, type, value, trace):
-		self.close()
-
-	def close(self):
-		self.con.close()
-
-
-	@property
-	def cur(self):
-		cur = self.con.cursor()
-		cur.row_factory = self.Dict_Factory
-		return cur
-
-	@property
-	def single_cur(self):
-		cur = self.con.cursor()
-		cur.row_factory = self.Single_Factory
-		return cur
-
-	@property
-	def Dict_Factory(self):
-		return lambda cur,row: dict(zip([col[0] for col in cur.description],row))
-
-	@property
-	def Single_Factory(self):
-		return lambda cur,row: row[0]
-
-	def select(self, table, fields):
-		return self.cur.execute("SELECT %s FROM %s" % (",".join(fields), table))
-
-	def count(self, table):
-		return self.single_cur.execute("SELECT count(*) FROM %s" % table).fetchone()
-
-	def select_join(self, fields, key="newsID", newsIDs=None):
-		"""fields = (
-			("newsInfo",("newsID","title","masssend_time AS time")), # 可别名
-			("newsDetail",("column","in_use")),
-			("newsContent",("content","newsID")) # 可重复 key
-		)
-		key = "newsID"""
-
-		fields = [[table, ['.'.join([table,col]) for col in cols]] for table, cols in fields]
-		cols = iter_flat([cols for table, cols in fields])
-
-		table0, cols0 = fields.pop(0)
-
-		sql = "SELECT {cols} FROM {table0} \n".format(cols=','.join(cols),table0=table0)
-		for table in [table for table,cols in fields]:
-			sql += "INNER JOIN {table} ON {key0} == {key} \n".format(
-						table = table,
-						key0 = '.'.join([table0,key]),
-						key = '.'.join([table,key])
-					)
-		if newsIDs is not None:
-			sql += "WHERE {} IN ({})".format('.'.join([table0,key]), ','.join('?'*len(newsIDs)))
-			return self.cur.execute(sql, newsIDs)
-		else:
-			return self.cur.execute(sql)
-
-	def update(self, table, newsID, newVal):
-	    ks, vs = tuple(zip(*newVal.items()))
-	    sql =  "UPDATE %s SET " % table
-	    sql += ','.join(["%s = ?" % k for k in ks])
-	    sql += " WHERE newsID = ?"
-	    vals = list(vs) + [newsID]
-	    with self.con:
-	        self.con.execute(sql,tuple(vals))
-	        self.con.commit()
-
-	def group_count(self, table, key):
-		return self.cur.execute("""SELECT {key}, count(*) AS sum FROM {table} GROUP BY {key}
-			""".format(key=key,table=table)).fetchall()
-
-	def get_newsIDs(self):
-		return self.single_cur.execute("SELECT newsID FROM newsInfo").fetchall()
-
-	def get_news_by_ID(self, newsID, orderBy='time Desc, idx ASC'):
-		if isinstance(newsID, str):
-			newsIDs = [newsID,]
-		elif isinstance(newsID, (list,tuple,set)):
-			newsIDs = list(newsID)
-		return self.cur.execute("""
-				SELECT 	title,
-						date(masssend_time) AS time,
-						cover AS cover_url,
-						content_url AS news_url,
-						newsID
-				FROM newsInfo
-				WHERE newsID in (%s)
-				ORDER BY %s
-			""" % (','.join('?'*len(newsIDs)), orderBy), newsIDs).fetchall()
+		SQLiteDB.__init__(self)

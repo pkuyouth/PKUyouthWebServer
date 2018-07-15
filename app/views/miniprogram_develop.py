@@ -5,7 +5,7 @@
 from flask import Blueprint
 miniprogram_develop = Blueprint('miniprogram_develop', __name__)
 
-import os 
+import os
 import sys
 
 basedir = os.path.join(os.path.dirname(__file__),"..") # 根目录为app
@@ -15,7 +15,7 @@ sys.path.append(os.path.join(basedir,"lib"))
 
 
 # from tfidf import TFIDF
-from ..lib.commonfuncs import dictToESC, get_errInfo, pkl_load
+from ..lib.utilfuncs import dictToESC, get_errInfo, pkl_load
 
 # cosAnalyzer = TFIDF()
 
@@ -93,7 +93,7 @@ def get_random():
 		jsonPack = {"errcode": -1, "err": get_errInfo(err)}
 		raise err
 	else:
-		jsonPack = {"errcode": 0, "news": results}		
+		jsonPack = {"errcode": 0, "news": results}
 	finally:
 		db.close()
 		return jsonify(jsonPack)
@@ -156,7 +156,7 @@ class DataBase(object):
 
 	def _get_news_by_ID(self, newsID):
 		if isinstance(newsID, str):
-			pass 
+			pass
 		elif isinstance(newsID, Iterable):
 			newsID = ",".join([str(aNewsId) for aNewsId in newsID])
 		self.dbCursor.execute("""
@@ -240,7 +240,7 @@ class DataBase(object):
 				WHERE newsID in ({})
 				ORDER BY newsID
 			""".format(",".join([str(hit[0]) for hit in resultsList])))
-		articleList = [dict(zip(["title","time","url","newsID"],row)) for row in self.dbCursor.fetchall()] 
+		articleList = [dict(zip(["title","time","url","newsID"],row)) for row in self.dbCursor.fetchall()]
 		resultsList.sort(key=lambda x: x[0]) #同时按newsID排序两个文章列表，再按rank重新排序
 		for article, hit in zip(articleList,resultsList):
 			article["rank"] = hit[1] #添加rank字段用于后续排序
@@ -299,7 +299,7 @@ class DataBase(object):
 			raise ValueError("unexpected recommend method %s !" % method)
 
 		elif method == "Tc":
-		
+
 			# 构造 thisBin
 			wordsList = pkl_load("wordsList.pkl")
 			wordsSet = frozenset(wordsList)
@@ -330,11 +330,11 @@ class DataBase(object):
 			ary1 = []
 			for word in wordsList:
 				ary1.append(kws_news_dict.get(word,0))
-			ary1 = np.array(ary1)	
+			ary1 = np.array(ary1)
 			cosDistDict = dict()
 			for newsID, ary2 in kws_db_array.items():
 				cosDistDict[newsID] = np.dot(ary1, ary2) / ( np.linalg.norm(ary1) * np.linalg.norm(ary2) )
-			
+
 			tops = list(sorted(cosDistDict.items(), key=lambda item: item[1], reverse=True))[:count]
 
 		# 构造结果 Dict
@@ -343,7 +343,7 @@ class DataBase(object):
 		for newsInfo in results:
 			newsInfo.update({"similarity": "%.4f" % newsDict[newsInfo["newsID"]]})
 		results.sort(key=lambda info: info["similarity"], reverse=True)
-		return results	
+		return results
 
 
 class WhooshIdx(object):
@@ -362,14 +362,14 @@ class WhooshIdx(object):
 		with ix.searcher() as searcher:
 			parser = MultifieldParser(fields, schema=ix.schema)
 			query = parser.parse(querystring)
-			hits = searcher.search(query,terms=True,limit=limit) 
+			hits = searcher.search(query,terms=True,limit=limit)
 			termsTotalList = [[dict(zip(["field","term"],(term[0], term[1].decode("utf-8")))) \
 				for term in terms] for terms in [hit.matched_terms() for hit in hits]], #terms，搜索的关键词
 			termsFinalTotalList = list()
 			for termsList in termsTotalList:
 				termsFinalList = list()
 				for terms in termsList:
-					termsFieldDict = dict()	
+					termsFieldDict = dict()
 					for term in terms:
 						if term["field"] not in termsFieldDict:
 							termsFieldDict[term["field"]] = list()
@@ -384,7 +384,7 @@ class WhooshIdx(object):
 					[hit["newsID"] for hit in hits], #newsID，用于数据库索引
 					[hit.rank for hit in hits], #ranks,用于结果排序
 					termsFinalList,
-					#[[highlights(field) 
+					#[[highlights(field)
 					#	for field in fields] for highlights in highlightsList], #hightlites
 				))
 		return resultsList #如果没有搜索到，则返回空列表
