@@ -15,9 +15,15 @@ from whoosh.index import open_dir
 from whoosh.fields import Schema, NUMERIC, TEXT #不可import × 否则与datetime冲突！
 from whoosh.qparser import QueryParser, MultifieldParser
 
-# 从外部调用时这样引用
-from ..utilfuncs import pkl_load, get_MD5
-from ..utilclass import Logger, MongoDB, SQLiteDB
+try:
+	# 从外部调用时这样引用
+	from ..utilfuncs import pkl_load, get_MD5
+	from ..utilclass import Logger, MongoDB, SQLiteDB
+except (ImportError, SystemError, ValueError):
+	sys.path.append("../")
+	from utilfuncs import pkl_load, get_MD5
+	from utilclass import Logger, MongoDB, SQLiteDB
+
 from .error import *
 
 
@@ -32,17 +38,27 @@ __all__ = [
 
 
 class WhooshIdx(object):
+
 	def __init__(self):
 		self.indexname = "news_index_whoosh"
 		self.idxDir = os.path.join(basedir,"database",self.indexname)
 		self.ix = open_dir(self.idxDir, indexname=self.indexname)
-		self.searcher = self.ix.searcher()
+		self.rels = self.__get_rels()
 
-	def search_strings(self, querystring, fields ,limit):
+	def __get_rels(self): # newsID 与 docnum 的关系
+		with self.ix.searcher() as searcher:
+			docnums = searcher.document_numbers()
+			newsIDs = (hit['newsID'] for hit in searcher.documents())
+			rels = dict(zip(newsIDs, docnums))
+		return rels
+
+	def search_strings(self, querystring, fields, limit, newsIDs=[]):  # 如果没有制定newsIDs，则无filters
 		parser = MultifieldParser(fields, schema=self.ix.schema)
 		query = parser.parse(querystring)
-		hits = self.searcher.search(query,limit=limit)
-		return [(hit["newsID"],hit.rank) for hit in hits]
+		with self.ix.searcher() as searcher:
+			hits = searcher.search(query,limit=limit,filter={self.rels[newsID] for newsID in newsIDs})
+			newsIDs = [(hit["newsID"],hit.rank) for hit in hits]
+		return newsIDs
 
 
 newsIdx = WhooshIdx()
@@ -69,17 +85,20 @@ class NewsDB(SQLiteDB):
 		return self.get_news_by_ID(self.get_newsIDs(),orderBy='read_num DESC ,time DESC, idx ASC')
 
 	def get_column_news(self, column):
-		newsIDs = [news["newsID"] for news in self.select("newsDetail",("newsID","column")).fetchall()
-						if news["column"] == column]
+		newsIDs = self.get_column_newsIDs(column)
 		newsInfo =  self.get_news_by_ID(newsIDs)
 		newsInfo.sort(key=lambda news: news["read_num"],reverse=True)
 		return newsInfo
 
-	def search_news(self, keyword, limit):
+	def get_column_newsIDs(self, column):
+		return [news["newsID"] for news in self.select("newsDetail",("newsID","column")).fetchall()	if news["column"] == column]
+
+	def search_news(self, keyword, limit, newsIDs=[]):
 		resultsList = newsIdx.search_strings(
 			querystring = " OR ".join(keyword.strip().split()), # 以 OR 连接空格分开的词
 			fields = ["title","content"],
 			limit = limit,
+			newsIDs = newsIDs,
 		)
 		newsIDs = [hit[0] for hit in resultsList]
 		newsInfo = self.get_news_by_ID(newsIDs)
@@ -200,3 +219,4 @@ class ReporterDB(MongoDB):
 			like -= 1
 
 		self.update_one({"_id": get_MD5(name)},{"like": like})
+
