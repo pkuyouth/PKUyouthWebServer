@@ -20,12 +20,12 @@ import jieba
 
 try:
 	from ..utilfuncs import pkl_dump, pkl_load, isChinese, iter_flat, write_csv, show_status
-	from ..utilclass import Logger
+	from ..utilclass import Logger, SQLiteDB
 except (ImportError, SystemError, ValueError):
 	import sys
 	sys.path.append('..')
 	from utilfuncs import pkl_dump, pkl_load, isChinese, iter_flat, write_csv, show_status
-	from utilclass import Logger
+	from utilclass import Logger, SQLiteDB
 
 
 pkl_load = partial(pkl_load, cachedir)
@@ -35,26 +35,6 @@ pkl_dump = partial(pkl_dump, cachedir)
 logger = Logger("tfidf")
 
 __all__ = ["TFIDF"]
-
-
-class SQliteDB(object):
-
-	dbLink = os.path.join(basedir,"database","pkuyouth.db")
-
-	def __init__(self):
-		self.con = sqlite3.connect(self.dbLink)
-
-	def __enter__(self):
-		return self
-
-	def __exit__(self, type, value, trace):
-		self.close()
-
-	def close(self):
-		self.con.close()
-
-	def select(self, table, cols=()):
-		return self.con.execute("SELECT %s FROM %s" % (",".join(cols), table)).fetchall()
 
 
 
@@ -76,7 +56,8 @@ class TFIDF(object):
 		#self.monoWords = pkl_load(self.Mono_Words_File)
 		#self.idfDict = pkl_load(self.IDF_Dict_File)
 		#self.bins = pkl_load(self.Bins_File)
-		pass
+		with SQLiteDB() as newsDB:
+			self.discard_newsIDs = frozenset(newsDB.get_discard_newsIDs())
 
 	def init_for_update(self):
 		self.stopWords = pkl_load(self.Stop_Words_File)
@@ -101,9 +82,10 @@ class TFIDF(object):
 		if fromCache:
 			return
 		else:
-			with SQliteDB() as db:
-				newsContents = db.select("newsContent",("newsID","content"))
-			fragments = {newsID: self.lcut(content) for newsID, content in show_status(newsContents, "cut news")}
+			with SQLiteDB() as newsDB:
+				newsContents = newsDB.select("newsContent",("newsID","content")).fetchall()
+				newsContents = [news for news in newsContents if news["newsID"] not in self.discard_newsIDs]
+			fragments = {news["newsID"]: self.lcut(news["content"]) for news in show_status(newsContents, "cut news")}
 			pkl_dump(self.Fragments_File, fragments)
 
 	def get_idfDict(self):
@@ -150,6 +132,9 @@ class TFIDF(object):
 
 
 	def match(self, newsID, count):
+		if newsID in self.discard_newsIDs:
+			raise ValueError("news %s has been discarded !")
+
 		thisBin = self.bins[newsID].astype(np.int8)
 		Tcs = {}
 		for newsID, otherBin in self.bins.items():

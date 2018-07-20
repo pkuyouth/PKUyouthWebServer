@@ -19,3 +19,6 @@ __pycache__/
 /app/static/upload/final/
 /app/static/upload/htmlcoder/
 /app/static/video/
+/app/static/image/miniprogram_api/sm_cover/
+/app/static/image/miniprogram_api/bg_cover_compressed/
+/app/static/image/miniprogram_api/deep_compressed_cover/

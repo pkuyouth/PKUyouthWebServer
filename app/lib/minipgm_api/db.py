@@ -44,6 +44,7 @@ class WhooshIdx(object):
 		self.idxDir = os.path.join(basedir,"database",self.indexname)
 		self.ix = open_dir(self.idxDir, indexname=self.indexname)
 		self.rels = self.__get_rels()
+		self.discard_docnums = self.__get_discard_docnums()
 
 	def __get_rels(self): # newsID 与 docnum 的关系
 		with self.ix.searcher() as searcher:
@@ -52,11 +53,24 @@ class WhooshIdx(object):
 			rels = dict(zip(newsIDs, docnums))
 		return rels
 
+	def __get_discard_docnums(self):
+		with SQLiteDB() as newsDB:
+			discard_newsIDs = newsDB.get_discard_newsIDs()
+		return self.get_docnums(discard_newsIDs)
+
+	def get_docnums(self, newsIDs):
+		return {self.rels[newsID] for newsID in newsIDs}
+
 	def search_strings(self, querystring, fields, limit, newsIDs=[]):  # 如果没有制定newsIDs，则无filters
 		parser = MultifieldParser(fields, schema=self.ix.schema)
 		query = parser.parse(querystring)
 		with self.ix.searcher() as searcher:
-			hits = searcher.search(query,limit=limit,filter={self.rels[newsID] for newsID in newsIDs})
+			hits = searcher.search(
+					q = query,
+					limit = limit,
+					filter = self.get_docnums(newsIDs),
+					mask = self.discard_docnums,
+				)
 			newsIDs = [(hit["newsID"],hit.rank) for hit in hits]
 		return newsIDs
 
@@ -72,7 +86,7 @@ class NewsDB(SQLiteDB):
 		return self.get_news_by_ID(newsIDs)
 
 	def get_latest_news(self, count):
-		newsInfo = self.get_news_by_ID(self.get_newsIDs())[:count]
+		newsInfo = self.get_news_by_ID(self.get_newsIDs(),coverType='origin')[:count]
 		digests = self.select("newsContent",("newsID","digest")).fetchall()
 		digestsDict = {news["newsID"]:news["digest"] for news in digests}
 		for news in newsInfo:
@@ -87,7 +101,7 @@ class NewsDB(SQLiteDB):
 	def get_column_news(self, column):
 		newsIDs = self.get_column_newsIDs(column)
 		newsInfo =  self.get_news_by_ID(newsIDs)
-		newsInfo.sort(key=lambda news: news["read_num"],reverse=True)
+		# newsInfo.sort(key=lambda news: news["read_num"],reverse=True)
 		return newsInfo
 
 	def get_column_newsIDs(self, column):
@@ -95,13 +109,13 @@ class NewsDB(SQLiteDB):
 
 	def search_news(self, keyword, limit, newsIDs=[]):
 		resultsList = newsIdx.search_strings(
-			querystring = " OR ".join(keyword.strip().split()), # 以 OR 连接空格分开的词
-			fields = ["title","content"],
-			limit = limit,
-			newsIDs = newsIDs,
-		)
+				querystring = " OR ".join(keyword.strip().split()), # 以 OR 连接空格分开的词
+				fields = ["title","content"],
+				limit = limit,
+				newsIDs = newsIDs,
+			)
 		newsIDs = [hit[0] for hit in resultsList]
-		newsInfo = self.get_news_by_ID(newsIDs)
+		newsInfo = self.get_news_by_ID(newsIDs, filter_in_use=False) # search时已经 mask
 		newsInfo.sort(key=lambda item: item["newsID"])
 		resultsList.sort(key=lambda hit: hit[0]) #同时按newsID排序两个文章列表，再按rank重新排序
 		for news, hit in zip(newsInfo,resultsList):
@@ -121,6 +135,10 @@ class UserDB(MongoDB):
 			"_id": openid,
 			"newsCol": [], # 文章收藏
 			"starRpt": [], # 点赞了哪些作者
+			"setting": {
+				"auto_change_card": False,
+				"use_small_card": True,
+			},
 		}
 
 	def add_user(self, openid):
@@ -176,6 +194,19 @@ class UserDB(MongoDB):
 			starRpt.remove(name)
 
 		self.update_one({"_id":openid},{"starRpt":starRpt})
+
+	def get_setting(self, openid):
+		return self.get_user(openid)["setting"]
+
+	def update_setting(self, openid, key, value):
+		user = self.get_user(openid)
+		if user is None:
+			raise UnregisteredError('unregistered user !')
+
+		setting = user['setting']
+		setting[key] = value
+
+		self.update_one({"_id":openid},{"setting":setting})
 
 
 class ReporterDB(MongoDB):

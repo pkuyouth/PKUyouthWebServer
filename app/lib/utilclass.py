@@ -446,13 +446,12 @@ class SQLiteDB(object):
 		return self.cur.execute("""SELECT {key}, count(*) AS count FROM {table} GROUP BY {key}
 			""".format(key=key,table=table)).fetchall()
 
-
-	def get_news_by_ID(self, newsID, orderBy='time DESC, idx ASC'):
+	def get_news_by_ID(self, newsID, orderBy='time DESC, idx ASC', coverType='compressed', filter_in_use=True):
 		if isinstance(newsID, str):
 			newsIDs = [newsID,]
 		elif isinstance(newsID, (list,tuple,set)):
 			newsIDs = list(newsID)
-		return self.cur.execute("""
+		newsInfo = self.cur.execute("""
 				SELECT 	title,
 						date(masssend_time) AS time,
 						cover AS cover_url,
@@ -465,8 +464,25 @@ class SQLiteDB(object):
 				ORDER BY %s
 			""" % (','.join('?'*len(newsIDs)), orderBy), newsIDs).fetchall()
 
+		if filter_in_use:
+			discardNewsIDs = frozenset(self.get_discard_newsIDs())
+			newsInfo = [news for news in newsInfo if news["newsID"] not in discardNewsIDs]
+
+		if coverType == 'origin':
+			pass
+		elif coverType == 'compressed':
+			for news in newsInfo:
+				news['cover_url'] = "%s.jpeg" % news['newsID']
+		else:
+			raise ValueError('illegal coverType -- %s !' % coverType)
+
+		return newsInfo
+
 	def get_newsIDs(self):
 		return self.single_cur.execute("SELECT newsID FROM newsInfo").fetchall()
+
+	def get_discard_newsIDs(self):
+		return self.single_cur.execute("SELECT newsID FROM newsDetail WHERE in_use == 0").fetchall()
 
 
 class WhooshIdx(object): # 暂时不用

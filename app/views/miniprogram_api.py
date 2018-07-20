@@ -18,7 +18,7 @@ import random
 from lxml import etree
 from pypinyin import lazy_pinyin
 
-from flask import redirect, url_for, request, jsonify, session
+from flask import redirect, url_for, request, jsonify, session, abort
 
 from ..lib.utilfuncs import dictToESC, get_secret
 from ..lib.utilclass import Logger, Mailer, Encipher
@@ -41,6 +41,11 @@ config = {
 	"prefix": {
 		"avatar": "https://rabbitzxh.top/static/image/miniprogram_api/reporter_avatar/",
 		"column": "https://rabbitzxh.top/static/image/miniprogram_api/column_cover/",
+		"sm_cover": "https://rabbitzxh.top/static/image/miniprogram_api/sm_cover/",
+		"bg_cover": "https://rabbitzxh.top/static/image/miniprogram_api/bg_cover_compressed/"
+	},
+	"version": {
+		"number": "0.0.20",
 	},
 }
 
@@ -60,6 +65,9 @@ columns = {
 	"图说": "null",
 	"对话": "null",
 	"又见": "null",
+	"节日": "null",
+	# "翻译": "null",
+	"新年献词": "null",
 }
 
 
@@ -80,13 +88,16 @@ def login():
 		session["session_key"] = session_key
 		userDB.register(openid)
 
-		token = encipher.get_token(openid)
-
 	except Exception as err:
-		logger(repr(err))
 		jsonPack = {"errcode": -1, "error": repr(err)}
 	else:
-		jsonPack = {"errcode": 0, "token": token, "config": config}
+		jsonPack = {
+			"errcode": 0,
+			"token": encipher.get_token(openid),
+			"config": config,
+			"setting": userDB.get_setting(openid),
+			"ok": "haha",
+		}
 	finally:
 		return jsonify(jsonPack)
 
@@ -169,8 +180,6 @@ def get_col_hot():
 @verify_login
 def get_column_list():
 	try:
-		# columns = ["调查","雕龙","光阴","机动","评论","人物","视界","特稿","言己","姿势","摄影","现场","图说","对话","又见"]
-
 		newsDB = NewsDB()
 		newsCount = [item for item in newsDB.group_count("newsDetail","column") if item["column"] in columns]
 		newsCountDict = {item["column"]:item["count"] for item in newsCount}
@@ -201,15 +210,15 @@ def get_column_list():
 def get_column_news():
 	try:
 		reqData = request.json
-		column = limited_param("column", reqData.get("column"),
-			["调查","雕龙","光阴","机动","评论","人物","视界","特稿","言己","姿势","摄影"])
+		column = limited_param("column", reqData.get("column"), columns)
 		limit = int_param('limit', reqData.get("limit"), maxi=10)
-		page = int_param('page', reqData.get("page"))
+		page = int_param('page', reqData.get("page"), mini=0)
 
 		newsDB = NewsDB()
 
 		newsInfo = newsDB.get_column_news(column)
-		newsInfo = newsInfo[(page-1)*limit: page*limit]
+		if page > 0:
+			newsInfo = newsInfo[(page-1)*limit: page*limit]
 
 		newsCol = userDB.get_newsCol(session["openid"])
 		for news in newsInfo:
@@ -231,7 +240,7 @@ def get_column_news():
 def get_reporter_list():
 	try:
 		reqData = request.json
-		limit = int_param('limit', reqData.get("limit"))
+		limit = int_param('limit', reqData.get("limit"), maxi=10)
 		page = int_param('page', reqData.get("page"))
 
 		rptsInfo = rptDB.get_rpts(keys=('name','avatar','like','news'))
@@ -248,7 +257,8 @@ def get_reporter_list():
 	else:
 		jsonPack = {"errcode": 0, "reporters": rptsInfo[:100]}
 	finally:
-		return jsonify(jsonPack)
+		#return jsonify(jsonPack)
+		abort(404)
 
 
 @miniprogram_api.route("/random_get_reporter", methods=["POST"])
@@ -342,8 +352,8 @@ def get_reporter_news():
 		newsDB = NewsDB()
 		reqData = request.json
 		name = limited_param("name", reqData.get("name"), rptDB.get_names())
-		page = int_param('page', reqData.get("page"))
-		limit = int_param('limit', reqData.get("limit"))
+		page = int_param('page', reqData.get("page"), mini=0)
+		limit = int_param('limit', reqData.get("limit"), maxi=10)
 
 		newsDict = {news["newsID"]:news for news in rptDB.get_rpt(name)["news"]}
 		newsInfo = newsDB.get_news_by_ID(list(newsDict.keys()))
@@ -356,7 +366,8 @@ def get_reporter_news():
 				"weight": newsDict[newsID]["weight"],
 			})
 		newsInfo.sort(key=lambda news: (news["weight"], news["time"]), reverse=True)
-		newsInfo = newsInfo[(page-1)*limit: page*limit]
+		if page > 0:
+			newsInfo = newsInfo[(page-1)*limit: page*limit]
 
 	except Exception as err:
 		jsonPack = {"errcode": -1, "error": repr(err)}
@@ -553,5 +564,23 @@ def get_update_log():
 		raise err
 	else:
 		jsonPack = {"errcode": 0, "log": logJson}
+	finally:
+		return jsonify(jsonPack)
+
+
+@miniprogram_api.route("/change_setting", methods=["POST"])
+@verify_timestamp
+@verify_login
+def change_setting():
+	try:
+		reqData = request.json
+		key = limited_param('key', reqData.get('key'), ['auto_change_card','use_small_card'])
+		value = limited_param('value', reqData.get('value'), [True, False])
+		userDB.update_setting(session['openid'],key,value)
+	except Exception as err:
+		jsonPack = {"errcode": -1, "error": repr(err)}
+		raise err
+	else:
+		jsonPack = {"errcode": 0, "result": [key, value]}
 	finally:
 		return jsonify(jsonPack)
