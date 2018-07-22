@@ -51,25 +51,25 @@ config = {
 
 columns = {
 	"调查": "只做好一件事——刨根问底",
-	"雕龙": "很多故事，就像学骑自行车，一辈子都忘不了",
+	"雕龙": "操千曲而后晓声，观千剑而后识器",
 	"光阴": "不忘初心，继续前进",
 	"机动": "说走就走，想停就停；可以跑高速，亦可钻胡同",
-	"评论": "很多故事，就像学骑自行车，一辈子都忘不了",
+	"评论": "条条大路，众生喧哗",
 	"人物": "今天载了位了不得的人物",
 	"视界": "一览众山小",
 	"特稿": "不停留在表面",
 	"言己": "说出你的故事",
 	"姿势": "干货、湿货、杂货，老司机带你涨姿势",
 	"摄影": "我为了把你拍得更漂亮嘛～",
-	"现场": "null",
-	"图说": "null",
-	"对话": "null",
-	"又见": "null",
-	"节日": "null",
+	"现场": "一车载你直达热点",
+	"图说": "边走边看",
+	"对话": "听见你的声音",
+	"又见": "如果在异乡，一个旅人",
+	"节日": "今天应该很高兴",
 	# "翻译": "null",
-	"新年献词": "null",
+	"新年献词": "新时代，新青年",
+	"纪念": "为了未来，收藏过去",
 }
-
 
 
 @miniprogram_api.route('/',methods=["GET","POST"])
@@ -450,16 +450,16 @@ def star_reporter():
 		return jsonify(jsonPack)
 
 
-@miniprogram_api.route("/search", methods=["POST"])
+@miniprogram_api.route("/search_by_keyword", methods=["POST"])
 @verify_timestamp
 @verify_login
-def search():
+def search_by_keyword():
 	try:
 		newsDB = NewsDB()
 
 		reqData = request.json
 		keyword = str_param('keyword', reqData.get("keyword"))
-		limit = int_param('limit', reqData.get("limit"))
+		limit = int_param('limit', reqData.get("limit"), maxi=10)
 		page = int_param('page', reqData.get("page"))
 
 		newsRange = reqData.get("range")
@@ -476,8 +476,51 @@ def search():
 		else:
 			raise KeyError("unexpected value of 'range' -- %s !" % newsRange)
 
-		newsInfo = newsDB.search_news(keyword, limit=limit*page, newsIDs=newsIDs)
+		newsInfo = newsDB.search_by_keyword(keyword, limit=limit*page, newsIDs=newsIDs)
 		newsInfo = newsInfo[(page-1)*limit: page*limit]
+
+		newsCol = userDB.get_newsCol(session["openid"])
+		for news in newsInfo:
+			news.update({"star": news["newsID"] in newsCol})
+
+	except Exception as err:
+		jsonPack = {"errcode": -1, "error": repr(err)}
+		raise err
+	else:
+		jsonPack = {"errcode": 0, "news": newsInfo}
+	finally:
+		newsDB.close()
+		return jsonify(jsonPack)
+
+
+@miniprogram_api.route("/get_date_range",methods=["GET"])
+@verify_timestamp
+@verify_login
+def get_date_range():
+	try:
+		newsDB = NewsDB()
+		dateRange = newsDB.get_date_range()
+	except Exception as err:
+		jsonPack = {"errcode": -1, "error": repr(err)}
+		raise err
+	else:
+		jsonPack = {"errcode": 0, "range": dateRange}
+	finally:
+		newsDB.close()
+		return jsonify(jsonPack)
+
+
+@miniprogram_api.route("/search_by_time",methods=["POST"])
+@verify_timestamp
+@verify_login
+def search_by_time():
+	try:
+		newsDB = NewsDB()
+		reqData = request.json
+		method = limited_param("method", reqData.get("method"), ["date","month"])
+		date = str_param("date", reqData.get("date"))
+
+		newsInfo = newsDB.search_by_time(date, method)
 
 		newsCol = userDB.get_newsCol(session["openid"])
 		for news in newsInfo:

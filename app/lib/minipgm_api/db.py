@@ -107,7 +107,21 @@ class NewsDB(SQLiteDB):
 	def get_column_newsIDs(self, column):
 		return [news["newsID"] for news in self.select("newsDetail",("newsID","column")).fetchall()	if news["column"] == column]
 
-	def search_news(self, keyword, limit, newsIDs=[]):
+	def get_date_range(self):
+		return {
+			"start": self.single_cur.execute("SELECT min(date(masssend_time)) FROM newsInfo").fetchone(),
+			"end": self.single_cur.execute("SELECT max(date(masssend_time)) FROM newsInfo").fetchone(),
+		}
+
+	def search_by_time(self, date, method):
+		newsInfo = self.get_news_by_ID(self.get_newsIDs(), filter_in_use=False) # 不过滤文章
+		if method == "date":
+			newsInfo = [news for news in newsInfo if news["time"] == date]
+		elif method == "month":
+			newsInfo = [news for news in newsInfo if news["time"][:7] == date[:7]]
+		return newsInfo
+
+	def search_by_keyword(self, keyword, limit, newsIDs=[]):
 		resultsList = newsIdx.search_strings(
 				querystring = " OR ".join(keyword.strip().split()), # 以 OR 连接空格分开的词
 				fields = ["title","content"],

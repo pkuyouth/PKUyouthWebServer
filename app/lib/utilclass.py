@@ -452,21 +452,21 @@ class SQLiteDB(object):
 		elif isinstance(newsID, (list,tuple,set)):
 			newsIDs = list(newsID)
 		newsInfo = self.cur.execute("""
-				SELECT 	title,
-						date(masssend_time) AS time,
-						cover AS cover_url,
-						content_url AS news_url,
-						like_num,
-						read_num,
-						newsID
-				FROM newsInfo
-				WHERE newsID in (%s)
-				ORDER BY %s
-			""" % (','.join('?'*len(newsIDs)), orderBy), newsIDs).fetchall()
+		        SELECT  title,
+		                date(masssend_time) AS time,
+		                cover AS cover_url,
+		                content_url AS news_url,
+		                like_num,
+		                read_num,
+		                in_use,
+		                i.newsID
+		        FROM newsInfo AS i INNER JOIN newsDetail AS d ON i.newsID == d.newsID
+		        WHERE i.newsID IN (%s)
+		        ORDER BY %s
+		    """ % (','.join('?'*len(newsIDs)),	orderBy), newsIDs).fetchall()
 
 		if filter_in_use:
-			discardNewsIDs = frozenset(self.get_discard_newsIDs())
-			newsInfo = [news for news in newsInfo if news["newsID"] not in discardNewsIDs]
+			newsInfo = [news for news in newsInfo if news['in_use']]
 
 		if coverType == 'origin':
 			pass
