@@ -15,10 +15,11 @@ textdir = os.path.join(basedir,"text")
 
 import re
 import random
+import simplejson as json
 from lxml import etree
 from pypinyin import lazy_pinyin
 
-from flask import redirect, url_for, request, jsonify, session, abort
+from flask import redirect, url_for, request, session, abort
 
 from ..lib.utilfuncs import dictToESC, get_secret
 from ..lib.utilclass import Logger, Mailer, Encipher
@@ -49,6 +50,7 @@ config = {
 	},
 }
 
+
 columns = {
 	"调查": "只做好一件事——刨根问底",
 	"雕龙": "操千曲而后晓声，观千剑而后识器",
@@ -72,6 +74,7 @@ columns = {
 }
 
 
+
 @miniprogram_api.route('/',methods=["GET","POST"])
 def root():
 	return "api root !"
@@ -79,6 +82,7 @@ def root():
 
 @miniprogram_api.route("/login", methods=["POST"])
 @verify_timestamp
+@verify_signature
 def login():
 	try:
 		js_code = request.json.get("js_code",None)
@@ -96,14 +100,14 @@ def login():
 			"token": encipher.get_token(openid),
 			"config": config,
 			"setting": userDB.get_setting(openid),
-			"ok": "haha",
 		}
 	finally:
-		return jsonify(jsonPack)
+		return json.dumps(jsonPack)
 
 
 @miniprogram_api.route("/get_col_random", methods=["POST"])
 @verify_timestamp
+@verify_signature
 @verify_login
 def get_col_random():
 	try:
@@ -122,11 +126,12 @@ def get_col_random():
 		jsonPack = {"errcode": 0, "news": newsInfo}
 	finally:
 		newsDB.close()
-		return jsonify(jsonPack)
+		return json.dumps(jsonPack)
 
 
 @miniprogram_api.route("/get_latest_news", methods=["POST"])
 @verify_timestamp
+@verify_signature
 @verify_login
 def get_latest_news():
 	try:
@@ -145,11 +150,12 @@ def get_latest_news():
 		jsonPack = {"errcode": 0, "news": newsInfo}
 	finally:
 		newsDB.close()
-		return jsonify(jsonPack)
+		return json.dumps(jsonPack)
 
 
 @miniprogram_api.route("/get_col_hot", methods=["POST"])
 @verify_timestamp
+@verify_signature
 @verify_login
 def get_col_hot():
 	try:
@@ -172,11 +178,12 @@ def get_col_hot():
 		jsonPack = {"errcode": 0, "news": newsInfo}
 	finally:
 		newsDB.close()
-		return jsonify(jsonPack)
+		return json.dumps(jsonPack)
 
 
 @miniprogram_api.route("/get_column_list", methods=["GET"])
 @verify_timestamp
+@verify_signature
 @verify_login
 def get_column_list():
 	try:
@@ -201,11 +208,12 @@ def get_column_list():
 		jsonPack = {"errcode": 0, "columns": columnsInfo}
 	finally:
 		newsDB.close()
-		return jsonify(jsonPack)
+		return json.dumps(jsonPack)
 
 
 @miniprogram_api.route("/get_column_news", methods=["POST"])
 @verify_timestamp
+@verify_signature
 @verify_login
 def get_column_news():
 	try:
@@ -231,11 +239,12 @@ def get_column_news():
 		jsonPack = {"errcode": 0, "news": newsInfo}
 	finally:
 		newsDB.close()
-		return jsonify(jsonPack)
+		return json.dumps(jsonPack)
 
 
 @miniprogram_api.route("/get_reporter_list", methods=["POST"])
 @verify_timestamp
+@verify_signature
 @verify_login
 def get_reporter_list():
 	try:
@@ -257,12 +266,13 @@ def get_reporter_list():
 	else:
 		jsonPack = {"errcode": 0, "reporters": rptsInfo[:100]}
 	finally:
-		#return jsonify(jsonPack)
+		#return json.dumps(jsonPack)
 		abort(404)
 
 
 @miniprogram_api.route("/random_get_reporter", methods=["POST"])
 @verify_timestamp
+@verify_signature
 @verify_login
 def random_get_reporter():
 	try:
@@ -286,11 +296,12 @@ def random_get_reporter():
 	else:
 		jsonPack = {"errcode": 0, "reporters": rptsInfo}
 	finally:
-		return jsonify(jsonPack)
+		return json.dumps(jsonPack)
 
 
 @miniprogram_api.route("/search_reporter", methods=["POST"])
 @verify_timestamp
+@verify_signature
 @verify_login
 def search_reporter():
 	try:
@@ -317,11 +328,12 @@ def search_reporter():
 		jsonPack = {"errcode": 0, "reporters": rptsInfo}
 	finally:
 		newsDB.close()
-		return jsonify(jsonPack)
+		return json.dumps(jsonPack)
 
 
 @miniprogram_api.route("/get_reporter_info", methods=["POST"])
 @verify_timestamp
+@verify_signature
 @verify_login
 def get_reporter_info():
 	try:
@@ -341,11 +353,12 @@ def get_reporter_info():
 		jsonPack = {"errcode": 0, "reporter": rptInfo}
 	finally:
 		newsDB.close()
-		return jsonify(jsonPack)
+		return json.dumps(jsonPack)
 
 
 @miniprogram_api.route("/get_reporter_news", methods=["POST"])
 @verify_timestamp
+@verify_signature
 @verify_login
 def get_reporter_news():
 	try:
@@ -376,11 +389,12 @@ def get_reporter_news():
 		jsonPack = {"errcode": 0, "news": newsInfo}
 	finally:
 		newsDB.close()
-		return jsonify(jsonPack)
+		return json.dumps(jsonPack)
 
 
 @miniprogram_api.route("/get_favorite", methods=["POST"])
 @verify_timestamp
+@verify_signature
 @verify_login
 def get_favorite():
 	try:
@@ -407,11 +421,12 @@ def get_favorite():
 		jsonPack = {"errcode": 0, "news": newsInfo}
 	finally:
 		newsDB.close()
-		return jsonify(jsonPack)
+		return json.dumps(jsonPack)
 
 
 @miniprogram_api.route("/star_news", methods=["POST"])
 @verify_timestamp
+@verify_signature
 @verify_login
 def star_news():
 	try:
@@ -428,11 +443,12 @@ def star_news():
 		jsonPack = {"errcode": 0, "action": action, "newsID": newsID}
 	finally:
 		newsDB.close()
-		return jsonify(jsonPack)
+		return json.dumps(jsonPack)
 
 
 @miniprogram_api.route("/star_reporter", methods=["POST"])
 @verify_timestamp
+@verify_signature
 @verify_login
 def star_reporter():
 	try:
@@ -447,11 +463,12 @@ def star_reporter():
 	else:
 		jsonPack = {"errcode": 0, "action": action, "name": name}
 	finally:
-		return jsonify(jsonPack)
+		return json.dumps(jsonPack)
 
 
 @miniprogram_api.route("/search_by_keyword", methods=["POST"])
 @verify_timestamp
+@verify_signature
 @verify_login
 def search_by_keyword():
 	try:
@@ -490,11 +507,12 @@ def search_by_keyword():
 		jsonPack = {"errcode": 0, "news": newsInfo}
 	finally:
 		newsDB.close()
-		return jsonify(jsonPack)
+		return json.dumps(jsonPack)
 
 
 @miniprogram_api.route("/get_date_range",methods=["GET"])
 @verify_timestamp
+@verify_signature
 @verify_login
 def get_date_range():
 	try:
@@ -507,11 +525,12 @@ def get_date_range():
 		jsonPack = {"errcode": 0, "range": dateRange}
 	finally:
 		newsDB.close()
-		return jsonify(jsonPack)
+		return json.dumps(jsonPack)
 
 
 @miniprogram_api.route("/search_by_time",methods=["POST"])
 @verify_timestamp
+@verify_signature
 @verify_login
 def search_by_time():
 	try:
@@ -533,11 +552,12 @@ def search_by_time():
 		jsonPack = {"errcode": 0, "news": newsInfo}
 	finally:
 		newsDB.close()
-		return jsonify(jsonPack)
+		return json.dumps(jsonPack)
 
 
 @miniprogram_api.route("/recommend", methods=["POST"])
 @verify_timestamp
+@verify_signature
 @verify_login
 def recommend():
 	try:
@@ -564,11 +584,12 @@ def recommend():
 		jsonPack = {"errcode": 0, "news": newsInfo}
 	finally:
 		newsDB.close()
-		return jsonify(jsonPack)
+		return json.dumps(jsonPack)
 
 
 @miniprogram_api.route("/feedback", methods=["POST"])
 @verify_timestamp
+@verify_signature
 @verify_login
 def feedback():
 	try:
@@ -584,23 +605,24 @@ def feedback():
 		mailer.feedback(feedbackText)
 		jsonPack = {"errcode": errcode, "result": feedbackText}
 	finally:
-		return jsonify(jsonPack)
+		return json.dumps(jsonPack)
 
 
 @miniprogram_api.route("/get_update_log", methods=["GET"])
 @verify_timestamp
+@verify_signature
 @verify_login
 def get_update_log():
 	try:
 		tree = etree.parse(os.path.join(textdir,'miniprogram_update_log.xml'))
 		logJson = [{
-		    "number": version.get('number'),
-		    "time": version.get('time'),
-		    "content": [{
-		        "row": idx + 1,
-		        "text": p.text,
-		        "strong": "strong" in p.attrib,
-		    } for idx, p in enumerate(version.findall('p'))],
+			"number": version.get('number'),
+			"time": version.get('time'),
+			"content": [{
+				"row": idx + 1,
+				"text": p.text,
+				"strong": "strong" in p.attrib,
+			} for idx, p in enumerate(version.findall('p'))],
 		} for version in tree.getroot().findall('version')]
 	except Exception as err:
 		jsonPack = {"errcode": -1, "error": repr(err)}
@@ -608,11 +630,12 @@ def get_update_log():
 	else:
 		jsonPack = {"errcode": 0, "log": logJson}
 	finally:
-		return jsonify(jsonPack)
+		return json.dumps(jsonPack)
 
 
 @miniprogram_api.route("/change_setting", methods=["POST"])
 @verify_timestamp
+@verify_signature
 @verify_login
 def change_setting():
 	try:
@@ -626,4 +649,5 @@ def change_setting():
 	else:
 		jsonPack = {"errcode": 0, "result": [key, value]}
 	finally:
-		return jsonify(jsonPack)
+		return json.dumps(jsonPack)
+

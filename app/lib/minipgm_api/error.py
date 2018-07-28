@@ -6,6 +6,7 @@
 __all__ = [
     "VerifyTimestampError",
     "VerifyTokenError",
+    "VerifySignatureError",
     "UnregisteredError",
 ]
 
@@ -13,6 +14,9 @@ class VerifyTimestampError(Exception):
     pass
 
 class VerifyTokenError(Exception):
+    pass
+
+class VerifySignatureError(Exception):
     pass
 
 class UnregisteredError(Exception):

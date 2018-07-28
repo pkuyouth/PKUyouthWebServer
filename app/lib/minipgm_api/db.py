@@ -86,14 +86,14 @@ class NewsDB(SQLiteDB):
 		return self.get_news_by_ID(newsIDs)
 
 	def get_latest_news(self, count):
-		newsInfo = self.get_news_by_ID(self.get_newsIDs(),coverType='origin')[:count]
+		newsInfo = self.get_news_by_ID(self.get_newsIDs())[:count]
 		digests = self.select("newsContent",("newsID","digest")).fetchall()
 		digestsDict = {news["newsID"]:news["digest"] for news in digests}
 		for news in newsInfo:
 			news["digest"] = digestsDict[news["newsID"]]
 
 		return [{k:v for k,v in news.items()
-			if k in ["newsID","title","digest","time","cover_url","news_url"]} for news in newsInfo]
+			if k in ["newsID","title","digest","time","cover_url","sn"]} for news in newsInfo]
 
 	def get_hot_news(self):
 		return self.get_news_by_ID(self.get_newsIDs(),orderBy='read_num DESC ,time DESC, idx ASC')

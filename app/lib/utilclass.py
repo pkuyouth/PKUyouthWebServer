@@ -389,7 +389,7 @@ class SQLiteDB(object):
 			key = "newsID"
 			newsIDs = [...]
 		"""
-		print(cols)
+
 		fields = [[table, ['.'.join([table,col]) for col in _cols]] for table, _cols in cols]
 
 		cols = iter_flat([_cols for table, _cols in fields])
@@ -446,7 +446,7 @@ class SQLiteDB(object):
 		return self.cur.execute("""SELECT {key}, count(*) AS count FROM {table} GROUP BY {key}
 			""".format(key=key,table=table)).fetchall()
 
-	def get_news_by_ID(self, newsID, orderBy='time DESC, idx ASC', coverType='compressed', filter_in_use=True):
+	def get_news_by_ID(self, newsID, orderBy='time DESC, idx ASC', filter_in_use=True):
 		if isinstance(newsID, str):
 			newsIDs = [newsID,]
 		elif isinstance(newsID, (list,tuple,set)):
@@ -455,7 +455,8 @@ class SQLiteDB(object):
 		        SELECT  title,
 		                date(masssend_time) AS time,
 		                cover AS cover_url,
-		                content_url AS news_url,
+		                sn,
+		                -- content_url AS news_url,
 		                like_num,
 		                read_num,
 		                in_use,
@@ -467,14 +468,6 @@ class SQLiteDB(object):
 
 		if filter_in_use:
 			newsInfo = [news for news in newsInfo if news['in_use']]
-
-		if coverType == 'origin':
-			pass
-		elif coverType == 'compressed':
-			for news in newsInfo:
-				news['cover_url'] = "%s.jpeg" % news['newsID']
-		else:
-			raise ValueError('illegal coverType -- %s !' % coverType)
 
 		return newsInfo
 

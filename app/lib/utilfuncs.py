@@ -38,6 +38,12 @@ __all__ = [
 	"get_errInfo",
 	"get_MD5",
 	"get_secret",
+    "MD5",
+    "SHA1",
+    "SHA224",
+    "SHA256",
+    "SHA384",
+    "SHA512",
 ]
 
 
@@ -54,6 +60,28 @@ def get_MD5(string):
 	hashObj = hashlib.md5()
 	hashObj.update(string)
 	return hashObj.hexdigest()
+
+
+def __get_hash(hash_fn, string):
+    if isinstance(string,str):
+        string = string.encode("utf-8")
+    elif isinstance(string,int) or isinstance(string,float):
+        string = str(string).encode("utf-8")
+    elif isinstance(string,bytes):
+        pass
+    else:
+        raise Exception("unknown type !")
+    hashObj = hash_fn()
+    hashObj.update(string)
+    return hashObj.hexdigest()
+
+MD5 = lambda string: __get_hash(hashlib.md5, string)
+SHA1 = lambda string: __get_hash(hashlib.sha1, string)
+SHA224 = lambda string: __get_hash(hashlib.sha224, string)
+SHA256 = lambda string: __get_hash(hashlib.sha256, string)
+SHA384 = lambda string: __get_hash(hashlib.sha384, string)
+SHA512 = lambda string: __get_hash(hashlib.sha512, string)
+
 
 def show_status(iterable, desc="running in iteration ..."):
 	"""封装的tqdm进度条显示函数"""
@@ -152,8 +180,8 @@ def isChinese(word):
 	return True
 
 
-def pkl_dump(folder, pklName, data, tmp=True, log=True):
-	pklPath = os.path.join(folder, pklName)
+def pkl_dump(folder, file, data, tmp=True, log=True):
+	pklPath = os.path.join(folder, file)
 	if tmp:
 		pklOldPath = pklPath
 		pklPath += ".tmp"
@@ -166,30 +194,32 @@ def pkl_dump(folder, pklName, data, tmp=True, log=True):
 			os.remove(pklOldPath)
 		os.rename(pklPath, pklOldPath)
 	if log:
-		print("pkl_dump -- %s at %s" % (pklName, os.path.abspath(folder)) )
+		print("pkl_dump -- %s at %s" % (file, os.path.abspath(folder)) )
 
-def pkl_load(folder, pklName, log=True):
-	pklPath = os.path.join(folder, pklName)
+def pkl_load(folder, file, log=True):
+	pklPath = os.path.join(folder, file)
 	with open(pklPath,"rb") as fp:
 		data = pickle.load(fp)
 	if log:
-		print("pkl_load -- %s at %s" % (pklName, os.path.abspath(folder)) )
+		print("pkl_load -- %s at %s" % (file, os.path.abspath(folder)) )
 	return data
 
-def json_dump(folder, jsonName, data):
-	jsonPath = os.path.join(folder, jsonName)
-	with open(jsonName,"w") as fp:
-		fp.write(json.dumps(data))
-	print("json_dump -- %s at %s" % (jsonName, os.path.abspath(folder)) )
+def json_dump(folder, file, data, log=True, **kw):
+	jsonPath = os.path.join(folder, file)
+	with open(jsonPath,"w") as fp:
+		fp.write(json.dumps(data, ensure_ascii=False, **kw))
+	if log:
+		print("json_dump -- %s at %s" % (file, os.path.abspath(folder)) )
 
-def json_load(folder, jsonName):
-	jsonPath = os.path.join(folder, jsonName)
+def json_load(folder, file, log=True, **kw):
+	jsonPath = os.path.join(folder, file)
 	with open(jsonPath,"r") as fp:
-		data = json.loads(fp.read())
-	print("json_load -- %s at %s" % (jsonName, os.path.abspath(folder)) )
+		data = json.loads(fp.read(), **kw)
+	if log:
+		print("json_load -- %s at %s" % (file, os.path.abspath(folder)) )
 	return data
 
-def _get_abspath(path):
+def __get_abspath(path):
 	abspath = os.path.abspath(path)
 	if not os.path.exists(abspath):
 		raise FileNotFoundError("can't find %s !" % abspath)
@@ -198,14 +228,14 @@ def _get_abspath(path):
 	return abspath
 
 def tmp_ctime(path):
-	abspath = _get_abspath(path)
+	abspath = __get_abspath(path)
 	fpDir, fpName = abspath.rsplit('/',1)
 	tmpFp = os.path.join(fpDir,fpName+".ctm")
 	with open(tmpFp,"w") as fp:
 		fp.write(str(os.path.getctime(abspath)))
 
 def verify_ctime(path):
-	abspath = _get_abspath(path)
+	abspath = __get_abspath(path)
 	fpDir, fpName = abspath.rsplit('/',1)
 	tmpFp = os.path.join(fpDir,fpName+".ctm")
 	if not os.path.exists(tmpFp):
