@@ -4,6 +4,7 @@
 *.db
 *.pkl
 *.log
+*.pid
 
 
 __pycache__/

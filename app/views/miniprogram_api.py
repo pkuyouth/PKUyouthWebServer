@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # filename: app/views/miniprogram_api.py
-#
 
-from flask import Blueprint
-miniprogram_api = Blueprint('miniprogram_api', __name__)
 
 import os
 import sys
@@ -19,8 +16,6 @@ import simplejson as json
 from lxml import etree
 from pypinyin import lazy_pinyin
 
-from flask import redirect, url_for, request, session, abort
-
 from ..lib.utilfuncs import dictToESC, get_secret
 from ..lib.utilclass import Logger, Mailer, Encipher
 from ..lib.wxapi import jscode2session
@@ -28,6 +23,11 @@ from ..lib.tfidf import TFIDF
 from ..lib.minipgm_api.db import UserDB, NewsDB, ReporterDB
 from ..lib.minipgm_api.error import *
 from ..lib.minipgm_api.util import *
+
+from flask import Blueprint, redirect, url_for, request, session, abort, safe_join
+
+miniprogram_api = Blueprint('miniprogram_api', __name__, root_path=os.path.abspath(basedir), \
+							static_folder='static', static_url_path='/static')
 
 
 logger = Logger("api")
@@ -38,17 +38,44 @@ encipher = Encipher(get_secret("flask_secret_key.pkl"))
 tfidf = TFIDF().init_for_match()
 
 
+
+image_prefix = "https://rabbitzxh.top/pkuyouth/miniprogram/api/static/image/"
+
+
 config = {
 	"prefix": {
-		"avatar": "https://rabbitzxh.top/static/image/miniprogram_api/reporter_avatar/",
-		"column": "https://rabbitzxh.top/static/image/miniprogram_api/column_cover/",
-		"sm_cover": "https://rabbitzxh.top/static/image/miniprogram_api/sm_cover/",
-		"bg_cover": "https://rabbitzxh.top/static/image/miniprogram_api/bg_cover_compressed/"
+		"avatar": image_prefix + "reporter_avatar/",
+		"column": image_prefix + "column_cover/",
+		"sm_cover": image_prefix + "sm_cover/",
+		"bg_cover": image_prefix + "bg_cover_compressed/"
 	},
-	"version": {
-		"number": "0.0.20",
+	"app_info": {
+		"name": "北大青年",
+		"version": "0.0.25",
 	},
 }
+
+index_col_desc = [
+	{
+		"id": 1,
+		"cover": image_prefix + 'bg_cover_compressed/26508266021.jpeg',
+		"title": '随便看看',
+		"desc": '随意翻翻北青的文章',
+		"navUrl": '/pages/collection-random/collection-random',
+	}, {
+		"id": 2,
+		"cover": image_prefix + 'bg_cover_compressed/26508283011.jpeg',
+		"title": '热文推荐',
+		"desc": '看看那些阅读量最高的文章',
+		"navUrl": '/pages/collection-hot/collection-hot',
+	}, {
+		"id": 3,
+		"cover": image_prefix + 'bg_cover_compressed/26508251861.jpeg',
+		"title": '还有更多',
+		"desc": '主编们正在努力整理 ...',
+		"navUrl": '',
+	},
+]
 
 
 columns = {
@@ -75,9 +102,14 @@ columns = {
 
 
 
-@miniprogram_api.route('/',methods=["GET","POST"])
+@miniprogram_api.route('/', methods=["GET","POST"])
 def root():
 	return "api root !"
+
+
+@miniprogram_api.route('/static/image/<path:image_path>', methods=['GET'])
+def image(image_path):
+	return miniprogram_api.send_static_file(safe_join('image/miniprogram_api', image_path))
 
 
 @miniprogram_api.route("/login", methods=["POST"])
@@ -99,10 +131,18 @@ def login():
 			"errcode": 0,
 			"token": encipher.get_token(openid),
 			"config": config,
-			"setting": userDB.get_setting(openid),
+			"sindex_col_descetting": userDB.get_setting(openid),
 		}
 	finally:
 		return json.dumps(jsonPack)
+
+
+@miniprogram_api.route("/get_col_desc", methods=["GET"])
+@verify_timestamp
+@verify_signature
+@verify_login
+def get_col_desc():
+	return json.dumps({"errcode": 0, "col_desc": index_col_desc})
 
 
 @miniprogram_api.route("/get_col_random", methods=["POST"])

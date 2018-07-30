@@ -7,10 +7,14 @@ import os
 basedir = os.path.abspath(os.path.dirname(__file__))
 from app.lib.utilfuncs import get_secret
 
+
 class Config(object):
 	"""基础配置"""
-	DEBUG = True
+
 	APPLICATION_ROOT = basedir
+	TRAP_BAD_REQUEST_ERRORS = False
+	JSON_AS_ASCII = False
+
 	SECRET_KEY = get_secret("flask_secret_key.pkl")
 	SESSION_COOKIE_PATH = '/'
 
@@ -18,13 +22,25 @@ class Config(object):
 	def init_app(app):
 		pass
 
+class DevelopmentConfig(Config):
 
-class DevelepmentConfig(Config):
-	TRAP_BAD_REQUEST_ERRORS = False
-	JSON_AS_ASCII = False
 	UPLOAD_FOLDER = os.path.join(basedir,"static/upload")
 	MAX_CONTENT_LENGTH = 64 * 1024 * 1024 # 最大12MB
+	DEBUG = True
+
+class PKUYouthMiniProgram(Config):
+	pass
+
+class PKUYouthMiniProgramDevelop(PKUYouthMiniProgram):
+	DEBUG = True
+
+class PKUYouthMiniProgramRelease(PKUYouthMiniProgram):
+	DEBUG = False
+
+
 
 config = { #注册dict
-	'default':DevelepmentConfig,
+	'default': DevelopmentConfig,
+	'pkuyouth_miniprogram_release': PKUYouthMiniProgramRelease,
+	'pkuyouth_miniprogram_develop': PKUYouthMiniProgramDevelop,
 }
