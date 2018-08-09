@@ -19,8 +19,13 @@ from whoosh.index import open_dir
 from whoosh.fields import Schema, NUMERIC, TEXT #不可import × 否则与datetime冲突！
 from whoosh.qparser import QueryParser, MultifieldParser
 
-from utilfuncs import pkl_load, get_secret, iter_flat
-from jieba_whoosh.analyzer import ChineseAnalyzer
+try:
+	from .utilfuncs import pkl_load, get_secret, iter_flat
+	from .jieba_whoosh.analyzer import ChineseAnalyzer
+except (ImportError,SystemError,ValueError):
+	from utilfuncs import pkl_load, get_secret, iter_flat
+	from jieba_whoosh.analyzer import ChineseAnalyzer
+
 
 
 basedir = os.path.join(os.path.dirname(__file__),"../") # app根目录
@@ -28,7 +33,7 @@ basedir = os.path.join(os.path.dirname(__file__),"../") # app根目录
 
 __all__ = [
 	"Logger",
-	"Mailer",
+	#"Mailer",
 	"Encipher",
 	"MongoDB",
 	"SQLiteDB",
@@ -41,14 +46,14 @@ class Logger(object):
 	__baseName = "flask"
 	__path = os.path.abspath(os.path.join(basedir,"../logs"))
 
-	def __init__(self, name=None):
+	def __init__(self, name, *args, file_log=True, console_log=True):
 		self.__name = name
 
 		self.__logger = logging.getLogger(self.name)
 		self.__logger.setLevel(logging.DEBUG)
 
-		self.file_log = self.__toFile = True
-		self.console_log = self.__toConsole = True
+		self.file_log = self.__toFile = file_log
+		self.console_log = self.__toConsole = console_log
 
 	@property
 	def name(self):
@@ -70,7 +75,7 @@ class Logger(object):
 
 	@property
 	def format(self):
-		fmt = "[%(levelname)s] %(asctime).19s, module: %(module)s, line %(lineno)s, %(message)s"
+		fmt = "[%(levelname)s] %(name)%, %(asctime).19s, %(message)s"
 		return logging.Formatter(fmt)
 
 	@property
@@ -149,9 +154,9 @@ class Logger(object):
 		return self.__logger.critical(*arg, **kw)
 
 	def __call__(self, *arg, **kw):
-		return self.error(*arg, **kw)
+		return self.info(*arg, **kw)
 
-
+'''
 class Mailer(object):
 
 	#SMTP_Domain = 'smtp.pku.edu.cn'
@@ -226,7 +231,7 @@ class Mailer(object):
 		subject = "用户投稿"
 		from_user = self.Contribute_User
 		self.send(from_user, subject, text)
-
+'''
 
 class Encipher(object):
 
@@ -454,7 +459,7 @@ class SQLiteDB(object):
 		newsInfo = self.cur.execute("""
 		        SELECT  title,
 		                date(masssend_time) AS time,
-		                cover AS cover_url,
+		                -- cover AS cover_url,
 		                sn,
 		                -- content_url AS news_url,
 		                like_num,

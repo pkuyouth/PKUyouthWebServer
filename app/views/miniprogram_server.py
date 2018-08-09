@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# filename: app/views/miniprogram_webserver.py
+# filename: app/views/miniprogram_server.py
 #
 
 from flask import Blueprint
-miniprogram_webserver = Blueprint('miniprogram_webserver', __name__)
+miniprogram_server = Blueprint('miniprogram_server', __name__)
 
 import os
 
@@ -14,13 +14,18 @@ secretdir = os.path.join(basedir,"../secret")
 
 
 from ..lib.utilfuncs import pkl_load
+from ..lib.utilclass import Logger
 
 import hashlib
 
 from flask import render_template, redirect, url_for, request, jsonify, abort
 
 
-@miniprogram_webserver.route('/', methods=['GET', 'POST'])
+logger = Logger("miniprogram_server")
+logger.console_log = False
+
+
+@miniprogram_server.route('/', methods=['GET', 'POST'])
 def root():
 	if request.method == "GET":
 		if set(request.args.keys()) == {"signature","timestamp","nonce","echostr"}:
@@ -37,15 +42,17 @@ def root():
 			else:
 				return "Verification Error !"
 		else:
-			return redirect(url_for('miniprogram_webserver.handle'))
+			return redirect(url_for('miniprogram_server.handle'))
 
 	elif request.method == "POST":
-		print(request.json)
+		logger.info('[Method POST] -- data -- ', request.data)
+		logger.info('[Method POST] -- json -- ', request.json)
 		pass
 	else:
 		abort(405)
 
 
-@miniprogram_webserver.route('/handle', methods=["GET","POST"])
+@miniprogram_server.route('/handle', methods=["GET","POST"])
 def handle():
-	return "Hello! This is the WebServer Platform of PKUyouth's Wechat-MiniProgramma!"
+	logger.info('[Method GET]', request.args)
+	return "Hello! This is the WebServer Platform of PKUYouth's Wechat-MiniProgramma!"

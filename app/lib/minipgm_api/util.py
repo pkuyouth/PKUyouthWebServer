@@ -14,7 +14,7 @@ import simplejson as json
 
 from flask import request, abort, session
 
-from ..utilfuncs import get_secret, SHA224
+from ..utilfuncs import get_secret, hmac_sha224
 from ..utilclass import Encipher
 from .db import SQLiteDB
 from .error import *
@@ -47,13 +47,16 @@ def verify_timestamp(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
         try:
-            timestamp = util_get_request_data().get("timestamp")
+            timestamp = int(util_get_request_data().get("a"), 16) # 16进制的时间戳
             if timestamp is None:
-                raise VerifyTimestampError("timestamp is missing !")
+                # raise VerifyTimestampError("timestamp is missing !")
+                abort(403)
             elif abs(1000*time.time()-int(timestamp)) >= 10 * 1000:
-                raise VerifyTimestampError("illegal timestamp !")
+                # raise VerifyTimestampError("illegal timestamp !")
+                abort(403)
         except VerifyTimestampError as err:
-            return json.dumps({"errcode":-1, "error":str(err)})
+            # return json.dumps({"errcode":-1, "error":str(err)})
+            abort(403)
         except Exception as err:
             return json.dumps({"errcode":-1, "error":repr(err)})
         else:
@@ -65,15 +68,19 @@ def verify_login(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
         try:
-            token = util_get_request_data().get("token")
+            token = util_get_request_data().get("b")
             if token is None:
-                raise VerifyTokenError("token is missing !")
+                # raise VerifyTokenError("token is missing !")
+                abort(403)
             elif session.get("openid") is None:
-                raise VerifyTokenError("session is expired !")
+                # raise VerifyTokenError("session is expired !")
+                abort(403)
             elif encipher.verify(token, session["openid"]) == False:
-                raise VerifyTokenError("failed to verify token !")
+                #raise VerifyTokenError("failed to verify token !")
+                abort(403)
         except VerifyTokenError as err:
-            return json.dumps({"errcode":-1, "error":str(err)})
+            # return json.dumps({"errcode":-1, "error":str(err)})
+            abort(403)
         except Exception as err:
             return json.dumps({"errcode":-1, "error":repr(err)})
         else:
@@ -86,17 +93,22 @@ def verify_signature(func):
     def wrapper(*args, **kwargs):
         try:
             data = util_get_request_data()
-            signature = data.get("signature")
+            signature = data.get("c")
             if signature is None:
-                raise VerifySignatureError("signature is missing !")
+                # raise VerifySignatureError("signature is missing !")
+                abort(403)
             elif not isinstance(signature,str) or len(signature) != 56:
-                raise VerifySignatureError("illegal signature !")
+                # raise VerifySignatureError("illegal signature !")
+                abort(403)
             else:
-                data = {k:v for k,v in data.items() if k != 'signature'} # 重新分配内存，并去掉 signature
-                if SHA224(",".join(sorted([",".join([str(i) for i in item]) for item in data.items()])).lower()) != signature:
-                    raise VerifySignatureError("verify signature failed !")
+                data = {k:v for k,v in data.items() if k != 'c'} # 重新分配内存，并去掉 signature
+                token = data.get('b')
+                if hmac_sha224(token, ",".join(sorted([",".join([str(i) for i in item]) for item in data.items()])).lower()) != signature:
+                    # raise VerifySignatureError("verify signature failed !")
+                    abort(403)
         except VerifySignatureError as err:
-            return json.dumps({"errcode":-1, "error":str(err)})
+            # return json.dumps({"errcode":-1, "error":str(err)})
+            abort(403)
         except Exception as err:
             return json.dumps({"errcode":-1, "error":repr(err)})
         else:

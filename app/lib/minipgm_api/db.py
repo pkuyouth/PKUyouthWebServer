@@ -7,7 +7,6 @@ import sys
 
 basedir = os.path.join(os.path.dirname(__file__),"../../") # app根目录
 cachedir = os.path.join(basedir,"cache")
-secretdir = os.path.join(basedir,"../secret")
 
 import random
 
@@ -82,18 +81,23 @@ class NewsDB(SQLiteDB):
 
 
 	def get_random_news(self, count):
-		newsIDs = random.sample(self.get_newsIDs(),count)
+		discard_newsIDs = frozenset(self.get_discard_newsIDs())
+		newsIDs = random.sample([newsID for newsID in self.get_newsIDs() if newsID not in discard_newsIDs], count)
 		return self.get_news_by_ID(newsIDs)
 
 	def get_latest_news(self, count):
 		newsInfo = self.get_news_by_ID(self.get_newsIDs())[:count]
-		digests = self.select("newsContent",("newsID","digest")).fetchall()
-		digestsDict = {news["newsID"]:news["digest"] for news in digests}
+		addition = self.select_join(cols=(
+			("newsInfo", ("newsID","cover AS cover_url",)),
+			("newsContent",("digest",)),
+		)).fetchall()
+
+		additionDict = {news["newsID"]:news for news in addition}
 		for news in newsInfo:
-			news["digest"] = digestsDict[news["newsID"]]
+			news.update(additionDict[news['newsID']])
 
 		return [{k:v for k,v in news.items()
-			if k in ["newsID","title","digest","time","cover_url","sn"]} for news in newsInfo]
+			if k in ("newsID","title","digest","time","cover_url","sn")} for news in newsInfo]
 
 	def get_hot_news(self):
 		return self.get_news_by_ID(self.get_newsIDs(),orderBy='read_num DESC ,time DESC, idx ASC')
@@ -101,7 +105,6 @@ class NewsDB(SQLiteDB):
 	def get_column_news(self, column):
 		newsIDs = self.get_column_newsIDs(column)
 		newsInfo =  self.get_news_by_ID(newsIDs)
-		# newsInfo.sort(key=lambda news: news["read_num"],reverse=True)
 		return newsInfo
 
 	def get_column_newsIDs(self, column):
@@ -185,7 +188,7 @@ class UserDB(MongoDB):
 		if action == "star":
 			newsCol.append({
 				"newsID": newsID,
-				"actionTime": actionTime
+				"actionTime": actionTime,
 			})
 		elif action == "unstar":
 			newsCol = [news for news in newsCol if news["newsID"] != newsID]

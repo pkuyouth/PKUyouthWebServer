@@ -100,7 +100,7 @@ def jscode2session(js_code):
 	openid = data.get("openid", None)
 
 	if not all([session_key, openid]):
-		logger("unexcepted resp.data -- %s" % data)
+		logger.error("unexcepted resp.data -- %s" % data)
 		return None
 	else:
 		return (session_key, openid)

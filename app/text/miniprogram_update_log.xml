@@ -1,38 +1,15 @@
 <root>
-    <version number="0.0.15" time="2018.07.16">
-        <p>更新了xxx</p>
-        <p>更新了xxx</p>
-        <p>修改了xxx</p>
-        <p>添加了xxx</p>
+    <version number="0.0.30" time="2018.07.31">
+        <p>此更新日志数据源自后端</p>
+        <p>支持动态修改</p>
+        <p strong="true">这条日志为测试版日志</p>
     </version>
-    <version number="0.0.15" time="2018.07.16">
-        <p strong="strong">更新了xxx</p>
-        <p>更新了xxx</p>
-        <p>修改了xxx</p>
-        <p>添加了xxx</p>
-    </version>
-    <version number="0.0.15" time="2018.07.16">
-        <p strong="strong">更新了xxx</p>
-        <p>更新了xxx</p>
-        <p>修改了xxx</p>
-        <p>添加了xxx</p>
-    </version>
-    <version number="0.0.15" time="2018.07.16">
-        <p strong="strong">更新了xxx</p>
-        <p>更新了xxx</p>
-        <p>修改了xxx</p>
-        <p>添加了xxx</p>
-    </version>
-    <version number="0.0.15" time="2018.07.16">
-        <p strong="strong">更新了xxx</p>
-        <p>更新了xxx</p>
-        <p>修改了xxx</p>
-        <p>添加了xxx</p>
-    </version>
-    <version number="0.0.15" time="2018.07.16">
-        <p strong="strong">更新了xxx</p>
-        <p>更新了xxx</p>
-        <p>修改了xxx</p>
-        <p>添加了xxx</p>
+    <version number="1.0.0" time="2018.08.05" top="true">
+        <p>《北大青年》微信小程序在开发团队一个月的共同努力中终于诞生，即日起开始投入公测啦！</p>
+        <p>我们提供了三种检索方法，让您能够更方便地从我们过去的群发中搜索文章。</p>
+        <p>如果某篇文章十分吸引您的眼球，可以再试试相似推荐按钮，也许您可以通过它找到更多感兴趣的文章～</p>
+        <p>我们为每个图文列表页定制了专门的排序方法，您可以通过它们对当前已加载的文章进行排序。</p>
+        <p>我们为您提供了个人收藏夹，遇到喜欢的文章别忘了收藏噢！</p>
+        <p>每一个项目都是不完美的，如果您在体验过程中发现了漏洞，或者有觉得不满意的地方，记得及时向我们反馈哦～ 您的支持将是我们不断完善的重要动力！</p>
     </version>
 </root>

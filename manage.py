@@ -17,3 +17,4 @@ else:
 	default = create_app("default")
 	pkuyouth_miniprogram_release = create_app("pkuyouth_miniprogram_release")
 	pkuyouth_miniprogram_develop = create_app("pkuyouth_miniprogram_develop")
+	pkuyouth_server = create_app("pkuyouth_server")

@@ -5,6 +5,7 @@
 # 保存常用的函数
 
 import os
+import hmac
 import hashlib
 import csv
 import time
@@ -19,6 +20,7 @@ secretdir = os.path.join(basedir,"../secret")
 
 
 __all__ = [
+	"tu_bytes"
 	"timeit",
 	"iter_split",
 	"iter_flat",
@@ -44,43 +46,30 @@ __all__ = [
     "SHA256",
     "SHA384",
     "SHA512",
+    "hmac_sha1",
+    "hmac_sha224",
 ]
 
 
-def get_MD5(string):
-	"""获得MD5值"""
-	if isinstance(string,str):
-		string = string.encode("utf-8")
-	elif isinstance(string,int) or isinstance(string,float):
-		string = str(string).encode("utf-8")
-	elif isinstance(string,bytes):
-		pass
-	else:
-		raise Exception("unknown type !")
-	hashObj = hashlib.md5()
-	hashObj.update(string)
-	return hashObj.hexdigest()
-
-
-def __get_hash(hash_fn, string):
-    if isinstance(string,str):
-        string = string.encode("utf-8")
-    elif isinstance(string,int) or isinstance(string,float):
-        string = str(string).encode("utf-8")
-    elif isinstance(string,bytes):
-        pass
+def to_bytes(s):
+    if isinstance(s,(str,int,float)):
+        return str(s).encode("utf-8")
+    elif isinstance(s,bytes):
+        return s
     else:
         raise Exception("unknown type !")
-    hashObj = hash_fn()
-    hashObj.update(string)
-    return hashObj.hexdigest()
 
-MD5 = lambda string: __get_hash(hashlib.md5, string)
-SHA1 = lambda string: __get_hash(hashlib.sha1, string)
-SHA224 = lambda string: __get_hash(hashlib.sha224, string)
-SHA256 = lambda string: __get_hash(hashlib.sha256, string)
-SHA384 = lambda string: __get_hash(hashlib.sha384, string)
-SHA512 = lambda string: __get_hash(hashlib.sha512, string)
+MD5 = lambda s: hashlib.md5(to_bytes(s)).hexdigest()
+SHA1 = lambda s: hashlib.sha1(to_bytes(s)).hexdigest()
+SHA224 = lambda s: hashlib.sha224(to_bytes(s)).hexdigest()
+SHA256 = lambda s: hashlib.sha256(to_bytes(s)).hexdigest()
+SHA384 = lambda s: hashlib.sha384(to_bytes(s)).hexdigest()
+SHA512 = lambda s: hashlib.sha512(to_bytes(s)).hexdigest()
+
+get_MD5 = MD5
+
+hmac_sha1 = lambda key, s: hmac.new(to_bytes(key), to_bytes(s), hashlib.sha1).hexdigest()
+hmac_sha224 = lambda key, s: hmac.new(to_bytes(key), to_bytes(s), hashlib.sha224).hexdigest()
 
 
 def show_status(iterable, desc="running in iteration ..."):
@@ -246,5 +235,8 @@ def verify_ctime(path):
 		this_ctime = str(os.path.getctime(abspath))
 		return this_ctime == tmp_ctime
 
-def get_secret(filename):
-	return pkl_load(secretdir, filename, log=False)
+def get_secret(filename, parse_fn=str, json=False):
+	if json:
+		return json_load(secretdir, filename, log=False)
+	else:
+		return parse_fn(pkl_load(secretdir, filename, log=False))

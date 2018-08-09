@@ -11,6 +11,7 @@ from app.lib.utilfuncs import get_secret
 class Config(object):
 	"""基础配置"""
 
+	DEBUG = True
 	APPLICATION_ROOT = basedir
 	TRAP_BAD_REQUEST_ERRORS = False
 	JSON_AS_ASCII = False
@@ -25,7 +26,7 @@ class Config(object):
 class DevelopmentConfig(Config):
 
 	UPLOAD_FOLDER = os.path.join(basedir,"static/upload")
-	MAX_CONTENT_LENGTH = 64 * 1024 * 1024 # 最大12MB
+	MAX_CONTENT_LENGTH = 12 * 1024 * 1024 # 最大12MB
 	DEBUG = True
 
 class PKUYouthMiniProgram(Config):
@@ -43,4 +44,5 @@ config = { #注册dict
 	'default': DevelopmentConfig,
 	'pkuyouth_miniprogram_release': PKUYouthMiniProgramRelease,
 	'pkuyouth_miniprogram_develop': PKUYouthMiniProgramDevelop,
+	'pkuyouth_server': Config,
 }

@@ -11,94 +11,100 @@ cachedir = os.path.join(basedir,"cache")
 textdir = os.path.join(basedir,"text")
 
 import re
-import random
+from collections import OrderedDict
 import simplejson as json
 from lxml import etree
 from pypinyin import lazy_pinyin
 
 from ..lib.utilfuncs import dictToESC, get_secret
-from ..lib.utilclass import Logger, Mailer, Encipher
+from ..lib.utilclass import Logger, Encipher
 from ..lib.wxapi import jscode2session
 from ..lib.tfidf import TFIDF
 from ..lib.minipgm_api.db import UserDB, NewsDB, ReporterDB
 from ..lib.minipgm_api.error import *
 from ..lib.minipgm_api.util import *
 
-from flask import Blueprint, redirect, url_for, request, session, abort, safe_join
-
-miniprogram_api = Blueprint('miniprogram_api', __name__, root_path=os.path.abspath(basedir), \
-							static_folder='static', static_url_path='/static')
+from flask import Blueprint, request, session, abort, safe_join #, redirect, url_for,
 
 
 logger = Logger("api")
-mailer = Mailer()
 userDB = UserDB()
 rptDB = ReporterDB()
 encipher = Encipher(get_secret("flask_secret_key.pkl"))
 tfidf = TFIDF().init_for_match()
 
 
+path_prefix = "/pkuyouth/miniprogram/api"
 
-image_prefix = "https://rabbitzxh.top/pkuyouth/miniprogram/api/static/image/"
+miniprogram_api = Blueprint('miniprogram_api', __name__, url_prefix=path_prefix, \
+	root_path=os.path.abspath(basedir), static_folder='static', static_url_path='/static')
+
+
+Aliyun_Image_Prefix = "https://rabbitzxh.top" + path_prefix + "/static/image"
+
+Qiniu_Image_Prefix = 'https://qiniu.rabbitzxh.top/pkuyouth'
 
 
 config = {
 	"prefix": {
-		"avatar": image_prefix + "reporter_avatar/",
-		"column": image_prefix + "column_cover/",
-		"sm_cover": image_prefix + "sm_cover/",
-		"bg_cover": image_prefix + "bg_cover_compressed/"
+		"avatar": Aliyun_Image_Prefix + "/reporter_avatar/",
+		"column": Qiniu_Image_Prefix + "/column_cover/",
+		"sm_cover": Qiniu_Image_Prefix + "/sm_cover/",
+		"bg_cover": Qiniu_Image_Prefix + "/bg_cover/"
 	},
 	"app_info": {
 		"name": "北大青年",
-		"version": "0.0.25",
+		"version": "0.0.30",
 	},
+	"qr_code": {
+		"recruit": Aliyun_Image_Prefix + "/qr_code/qrcode_recruit.jpg"
+	}
 }
 
 index_col_desc = [
 	{
-		"id": 1,
-		"cover": image_prefix + 'bg_cover_compressed/26508266021.jpeg',
+		"id": 0,
+		"cover": Qiniu_Image_Prefix + '/bg_cover/26508266021.jpeg',
 		"title": '随便看看',
 		"desc": '随意翻翻北青的文章',
-		"navUrl": '/pages/collection-random/collection-random',
+		"path": '/pages/collection-random/collection-random',
+	}, {
+		"id": 1,
+		"cover": Qiniu_Image_Prefix + '/bg_cover/26508283011.jpeg',
+		"title": '热文排行',
+		"desc": '看看那些阅读量最高的文章',
+		"path": '/pages/collection-hot/collection-hot',
 	}, {
 		"id": 2,
-		"cover": image_prefix + 'bg_cover_compressed/26508283011.jpeg',
-		"title": '热文推荐',
-		"desc": '看看那些阅读量最高的文章',
-		"navUrl": '/pages/collection-hot/collection-hot',
-	}, {
-		"id": 3,
-		"cover": image_prefix + 'bg_cover_compressed/26508251861.jpeg',
+		"cover": Qiniu_Image_Prefix + '/bg_cover/26508251861.jpeg',
 		"title": '还有更多',
 		"desc": '主编们正在努力整理 ...',
-		"navUrl": '',
+		"path": '',
 	},
 ]
 
 
-columns = {
+columns = OrderedDict({
 	"调查": "只做好一件事——刨根问底",
-	"雕龙": "操千曲而后晓声，观千剑而后识器",
-	"光阴": "不忘初心，继续前进",
-	"机动": "说走就走，想停就停；可以跑高速，亦可钻胡同",
-	"评论": "条条大路，众生喧哗",
 	"人物": "今天载了位了不得的人物",
-	"视界": "一览众山小",
 	"特稿": "不停留在表面",
-	"言己": "说出你的故事",
+	"视界": "一览众山小",
+	"光阴": "不忘初心，继续前进",
 	"姿势": "干货、湿货、杂货，老司机带你涨姿势",
-	"摄影": "我为了把你拍得更漂亮嘛～",
-	"现场": "一车载你直达热点",
-	"图说": "边走边看",
-	"对话": "听见你的声音",
+	"言己": "说出你的故事",
 	"又见": "如果在异乡，一个旅人",
-	"节日": "今天应该很高兴",
-	# "翻译": "null",
-	"新年献词": "新时代，新青年",
+	"雕龙": "操千曲而后晓声，观千剑而后识器",
+	"评论": "条条大路，众生喧哗",
+	"摄影": "我为了把你拍得更漂亮嘛～",
+	"图说": "边走边看",
+	"机动": "说走就走，想停就停；可以跑高速，亦可钻胡同",
+	"现场": "一车载你直达热点",
+	"对话": "听见你的声音",
 	"纪念": "为了未来，收藏过去",
-}
+	"节日": "今天应该很高兴",
+	"新年献词": "新时代，新青年",
+	# "翻译": "null",
+})
 
 
 
@@ -129,9 +135,9 @@ def login():
 	else:
 		jsonPack = {
 			"errcode": 0,
-			"token": encipher.get_token(openid),
+			"b": encipher.get_token(openid), # token
 			"config": config,
-			"sindex_col_descetting": userDB.get_setting(openid),
+			"setting": userDB.get_setting(openid),
 		}
 	finally:
 		return json.dumps(jsonPack)
@@ -239,7 +245,7 @@ def get_column_list():
 			"newsCount": newsCountDict[title]
 		} for idx, (title, desc) in enumerate(columns.items())]
 
-		columnsInfo.sort(key=lambda column: lazy_pinyin(column["title"]))
+		# columnsInfo.sort(key=lambda column: lazy_pinyin(column["title"]))
 
 	except Exception as err:
 		jsonPack = {"errcode": -1, "error": repr(err)}
@@ -282,63 +288,6 @@ def get_column_news():
 		return json.dumps(jsonPack)
 
 
-@miniprogram_api.route("/get_reporter_list", methods=["POST"])
-@verify_timestamp
-@verify_signature
-@verify_login
-def get_reporter_list():
-	try:
-		reqData = request.json
-		limit = int_param('limit', reqData.get("limit"), maxi=10)
-		page = int_param('page', reqData.get("page"))
-
-		rptsInfo = rptDB.get_rpts(keys=('name','avatar','like','news'))
-		for rpt in rptsInfo:
-			rpt["nameSpell"] = "".join(lazy_pinyin(rpt["name"]))
-			rpt["newsCount"] = len(rpt.pop("news"))
-			rpt["avatar"] += '-%d.jpg' % random.randint(1,8)
-		rptsInfo.sort(key=lambda rpt: rpt["newsCount"], reverse=True)
-		rptsInfo = rptsInfo[(page-1)*limit: page*limit]
-
-	except Exception as err:
-		jsonPack = {"errcode": -1, "error": repr(err)}
-		raise err
-	else:
-		jsonPack = {"errcode": 0, "reporters": rptsInfo[:100]}
-	finally:
-		#return json.dumps(jsonPack)
-		abort(404)
-
-
-@miniprogram_api.route("/random_get_reporter", methods=["POST"])
-@verify_timestamp
-@verify_signature
-@verify_login
-def random_get_reporter():
-	try:
-		reqData = request.json
-		limit = int_param('limit', reqData.get("limit"), maxi=10)
-
-		rptsInfo = rptDB.get_rpts(keys=('name','avatar','like','news'))
-		for rpt in rptsInfo:
-			rpt["nameSpell"] = "".join(lazy_pinyin(rpt["name"]))
-			rpt["newsCount"] = len(rpt.pop("news"))
-			rpt["avatar"] += '-%d.jpg' % random.randint(1,8)
-
-		rptsInfo = [rpt for rpt in rptsInfo if rpt["newsCount"] > 5] # 只推荐大于5篇的记者
-
-		rptsInfo = random.sample(rptsInfo, limit)
-		rptsInfo.sort(key=lambda rpt: rpt["newsCount"], reverse=True)
-
-	except Exception as err:
-		jsonPack = {"errcode": -1, "error": repr(err)}
-		raise err
-	else:
-		jsonPack = {"errcode": 0, "reporters": rptsInfo}
-	finally:
-		return json.dumps(jsonPack)
-
-
 @miniprogram_api.route("/search_reporter", methods=["POST"])
 @verify_timestamp
 @verify_signature
@@ -351,12 +300,9 @@ def search_reporter():
 
 		regex = re.compile("|".join(name.split())) # | 连接多个名字片段
 		rpts = [rpt for rpt in rptDB.get_names() if regex.search(rpt) is not None]
-		rptsInfo = [rptDB.get_rpt(rpt,keys=("name","desc","avatar","like","news")) for rpt in rpts]
+		rptsInfo = [rptDB.get_rpt(rpt,keys=("name","avatar","news")) for rpt in rpts]
 
 		for rpt in rptsInfo:
-			rpt["nameSpell"] = "".join(lazy_pinyin(rpt["name"]))
-			rpt["avatar"] += '-%d.jpg' % random.randint(1,8)
-			rpt["star"] = rpt["name"] in userDB.get_starRpt(session["openid"])
 			rpt["newsCount"] = len(rpt.pop("news"))
 
 		rptsInfo.sort(key=lambda rpt: rpt["newsCount"], reverse=True)
@@ -366,31 +312,6 @@ def search_reporter():
 		raise err
 	else:
 		jsonPack = {"errcode": 0, "reporters": rptsInfo}
-	finally:
-		newsDB.close()
-		return json.dumps(jsonPack)
-
-
-@miniprogram_api.route("/get_reporter_info", methods=["POST"])
-@verify_timestamp
-@verify_signature
-@verify_login
-def get_reporter_info():
-	try:
-		newsDB = NewsDB()
-		reqData = request.json
-		name = limited_param("name", reqData.get("name"), rptDB.get_names())
-
-		rptInfo = rptDB.get_rpt(name,keys=("desc","avatar","like","news"))
-		rptInfo["avatar"] += '-%d.jpg' % random.randint(1,8)
-		rptInfo["star"] = name in userDB.get_starRpt(session["openid"])
-		rptInfo["newsCount"] = len(rptInfo.pop("news"))
-
-	except Exception as err:
-		jsonPack = {"errcode": -1, "error": repr(err)}
-		raise err
-	else:
-		jsonPack = {"errcode": 0, "reporter": rptInfo}
 	finally:
 		newsDB.close()
 		return json.dumps(jsonPack)
@@ -413,12 +334,9 @@ def get_reporter_news():
 
 		newsCol = userDB.get_newsCol(session["openid"])
 		for news in newsInfo:
-			newsID = news["newsID"]
 			news.update({
-				"star": newsID in newsCol,
-				"weight": newsDict[newsID]["weight"],
+				"star": news["newsID"] in newsCol,
 			})
-		newsInfo.sort(key=lambda news: (news["weight"], news["time"]), reverse=True)
 		if page > 0:
 			newsInfo = newsInfo[(page-1)*limit: page*limit]
 
@@ -480,29 +398,9 @@ def star_news():
 		jsonPack = {"errcode": -1, "error": repr(err)}
 		raise err
 	else:
-		jsonPack = {"errcode": 0, "action": action, "newsID": newsID}
+		jsonPack = {"errcode": 0, }
 	finally:
 		newsDB.close()
-		return json.dumps(jsonPack)
-
-
-@miniprogram_api.route("/star_reporter", methods=["POST"])
-@verify_timestamp
-@verify_signature
-@verify_login
-def star_reporter():
-	try:
-		reqData = request.json
-		action = limited_param('action', reqData.get("action"), ["star","unstar"])
-		name = limited_param('name', reqData.get("name"), rptDB.get_names())
-		userDB.update_starRpt(session["openid"], name, action)
-		rptDB.update_like(name, action)
-	except Exception as err:
-		jsonPack = {"errcode": -1, "error": repr(err)}
-		raise err
-	else:
-		jsonPack = {"errcode": 0, "action": action, "name": name}
-	finally:
 		return json.dumps(jsonPack)
 
 
@@ -627,27 +525,6 @@ def recommend():
 		return json.dumps(jsonPack)
 
 
-@miniprogram_api.route("/feedback", methods=["POST"])
-@verify_timestamp
-@verify_signature
-@verify_login
-def feedback():
-	try:
-		feedbackText = str_param('feedbackText', request.json.get("feedback"))
-		if feedbackText.strip() == 'false':
-			errcode = -1
-		else:
-			errcode = 0
-	except Exception as err:
-		jsonPack = {"errcode": -1, "error": repr(err)}
-		raise err
-	else:
-		mailer.feedback(feedbackText)
-		jsonPack = {"errcode": errcode, "result": feedbackText}
-	finally:
-		return json.dumps(jsonPack)
-
-
 @miniprogram_api.route("/get_update_log", methods=["GET"])
 @verify_timestamp
 @verify_signature
@@ -687,7 +564,7 @@ def change_setting():
 		jsonPack = {"errcode": -1, "error": repr(err)}
 		raise err
 	else:
-		jsonPack = {"errcode": 0, "result": [key, value]}
+		jsonPack = {"errcode": 0, }
 	finally:
 		return json.dumps(jsonPack)
 
