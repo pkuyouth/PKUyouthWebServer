@@ -136,7 +136,7 @@ if __name__ == '__main__':
     # cv_compress_bg(Origin_JPEG_Cover_Dir, Pre_Bg_Cover_Dir)
 
     # deep_compress(Pre_Sm_Cover_Dir, Sm_Cover_Dir, quality=95) # 不要用这个压缩小图，否则容易不清楚！
-    # deep_compress(Pre_Bg_Cover_Dir, Bg_Cover_Dir, quality=85)
+    deep_compress(Pre_Bg_Cover_Dir, Bg_Cover_Dir, quality=85)
 
     # client = QiniuClient()
     # Column_Cover_Dir = os.path.join(Cover_Dir, 'column_cover')
@@ -145,4 +145,4 @@ if __name__ == '__main__':
     # upload_folder(Column_Cover_Dir)
     # delete_folder(Column_Cover_Dir)
     # print(json.dumps(client.list('column_cover'), indent=4))
-    upload_folder(Sm_Cover_Dir)
+    # upload_folder(Sm_Cover_Dir)

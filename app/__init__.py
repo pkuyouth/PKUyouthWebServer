@@ -2,10 +2,8 @@
 # -*- coding: utf-8 -*-
 # filename: app/__init__.py
 
-import os
-basedir = os.path.abspath(os.path.dirname(__file__))
 
-from flask import Flask, render_template
+from flask import Flask
 from config import config
 
 def create_app(config_name):

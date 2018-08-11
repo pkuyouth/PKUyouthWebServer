@@ -185,13 +185,21 @@ def pkl_dump(folder, file, data, tmp=True, log=True):
 	if log:
 		print("pkl_dump -- %s at %s" % (file, os.path.abspath(folder)) )
 
-def pkl_load(folder, file, log=True):
+def pkl_load(folder, file, log=True, default=None):
 	pklPath = os.path.join(folder, file)
-	with open(pklPath,"rb") as fp:
-		data = pickle.load(fp)
-	if log:
-		print("pkl_load -- %s at %s" % (file, os.path.abspath(folder)) )
-	return data
+	try:
+		with open(pklPath,"rb") as fp:
+			data = pickle.load(fp)
+		if log:
+			print("pkl_load -- %s at %s" % (file, os.path.abspath(folder)) )
+	except FileNotFoundError as err:
+		if default is None:
+			raise err
+		else:
+			data = default
+	finally:
+		return data
+
 
 def json_dump(folder, file, data, log=True, **kw):
 	jsonPath = os.path.join(folder, file)

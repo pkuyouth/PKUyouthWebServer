@@ -54,10 +54,10 @@ config = {
 	},
 	"app_info": {
 		"name": "北大青年",
-		"version": "0.0.30",
+		"version": "1.0.0",
 	},
 	"qr_code": {
-		"recruit": Aliyun_Image_Prefix + "/qr_code/qrcode_recruit.jpg"
+		"recruit": Aliyun_Image_Prefix + "/qr_code/qrcode_recurit_not_yet_released.jpg"
 	}
 }
 
@@ -296,7 +296,14 @@ def search_reporter():
 	try:
 		newsDB = NewsDB()
 		reqData = request.json
-		name = str_param('name', reqData.get("name"))
+		name = str_param('name', reqData.get("name")).strip() # 去空格
+
+		for char in r'.+*?^$|-#><=(){}[]\\': # 过滤正则表达式关键字
+			if char in name:
+				raise re.error('include illegal char')
+
+		if name == '':
+			raise re.error('no name')
 
 		regex = re.compile("|".join(name.split())) # | 连接多个名字片段
 		rpts = [rpt for rpt in rptDB.get_names() if regex.search(rpt) is not None]
@@ -307,6 +314,8 @@ def search_reporter():
 
 		rptsInfo.sort(key=lambda rpt: rpt["newsCount"], reverse=True)
 
+	except re.error as err:
+		jsonPack = {"errcode": 0, "reporters": [], "error": repr(err)}
 	except Exception as err:
 		jsonPack = {"errcode": -1, "error": repr(err)}
 		raise err
@@ -326,11 +335,10 @@ def get_reporter_news():
 		newsDB = NewsDB()
 		reqData = request.json
 		name = limited_param("name", reqData.get("name"), rptDB.get_names())
-		page = int_param('page', reqData.get("page"), mini=0)
 		limit = int_param('limit', reqData.get("limit"), maxi=10)
+		page = int_param('page', reqData.get("page"), mini=0)
 
-		newsDict = {news["newsID"]:news for news in rptDB.get_rpt(name)["news"]}
-		newsInfo = newsDB.get_news_by_ID(list(newsDict.keys()))
+		newsInfo = newsDB.get_news_by_ID(rptDB.get_rpt(name)['news'])
 
 		newsCol = userDB.get_newsCol(session["openid"])
 		for news in newsInfo:
@@ -357,7 +365,7 @@ def get_reporter_news():
 def get_favorite():
 	try:
 		reqData = request.json
-		limit = int_param('limit', reqData.get("limit"))
+		limit = int_param('limit', reqData.get("limit"), maxi=10)
 		page = int_param('page', reqData.get("page"), mini=0) # 允许等于0
 
 		newsDB = NewsDB()
@@ -502,7 +510,7 @@ def recommend():
 		newsDB = NewsDB()
 
 		reqData = request.json
-		limit = int_param('limit', reqData.get("limit"))
+		limit = int_param('limit', reqData.get("limit"), maxi=10)
 		newsID = limited_param('newsID', reqData.get("newsID"), newsDB.get_newsIDs())
 
 		Tcs = tfidf.match(newsID, limit)

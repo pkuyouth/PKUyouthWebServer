@@ -9,19 +9,18 @@ basedir = os.path.join(os.path.dirname(__file__),"../../") # app根目录
 cachedir = os.path.join(basedir,"cache")
 
 import requests
-from io import StringIO
 from functools import partial
 import simplejson as json
 
 try:
-	from pkuyouth_server_token import Token
 	from error import AbnormalErrcode
 	sys.path.append('../')
 	from utilfuncs import json_dump, json_load
+	from utilclass import WxAuth
 except (ImportError, SystemError, ValueError):
-	from .pkuyouth_server_token import Token
 	from .error import AbnormalErrcode
 	from ..utilfuncs import json_dump, json_load
+	from ..utilclass import WxAuth
 
 json_dump = partial(json_dump, cachedir)
 json_load = partial(json_load, cachedir)
@@ -32,71 +31,67 @@ __all__ = ["Media","Material","Menu",]
 
 class ApiRequest(object):
 
-	def __init__(self):
-		pass
+	def __init__(self, account='test'):
+		self.__auth = WxAuth(account)
 
-	@classmethod
-	def __request(cls, method, url, *args, **kw):
+	def __request(self, method, url, *args, **kwargs):
 		try:
-			params = {"access_token": Token.get()}
-			if method == 'GET':
-				params.update(kw.pop('params'))
-				resp = requests.get(url,params=params,**kw)
-			elif method == 'POST':
-				resp = requests.post(url,params=params,**kw)
-			else:
-				raise Exception('unregisted HTTP method -- %s !' % method)
+			resp = requests.request(method, url, *args, auth=self.__auth, **kwargs)
 			if resp.status_code >= 400:
 				resp.raise_for_status()
 			else:
-				respData = resp.json()
-				errcode = respData.get("errcode")
+				respJson = resp.json()
+				errcode = respJson.get("errcode")
 				if errcode is not None and errcode != 0:
-					raise AbnormalErrcode(respData)
+					raise AbnormalErrcode(respJson)
 		except Exception as err:
 			raise err
 		else:
-			return respData
+			return respJson
 
-	@classmethod
-	def get(cls, url, params={},**kw):
-		return cls.__request('GET',url,params=params, **kw)
+	def get(self, url, params={}, **kwargs):
+		return self.__request('GET',url,params=params, **kwargs)
 
-	@classmethod
-	def post(cls, url, data={},**kw):
-		return cls.__request('POST',url,data=json.dumps(data, ensure_ascii=False).encode('utf-8'), **kw)
+	def post(self, url, data={}, **kwargs):
+		print(data)
+		return self.__request('POST',url,data=json.dumps(data, ensure_ascii=False).encode('utf-8'), **kwargs)
 
 
-class Media(object):
+class Api(object):
+
+	api = {}
+
+	def __init__(self, account):
+		self.apiRequest = ApiRequest(account)
+
+
+class Media(Api):
 
 	api = {
 		"get": "https://api.weixin.qq.com/cgi-bin/media/get",
 	}
 
-	@classmethod
-	def upload(cls, picUrl):
+	def upload(self, picUrl):
 		pass
 
 
-	@classmethod # 未写完
-	def get(cls, mediaId):
-		return ApiRequest.get(cls.api["get"],{
+	def get(self, mediaId): # 未写完
+		return self.apiRequest.get(self.api["get"],{
 				"media_id": mediaId
 			})
 
-	@classmethod
-	def uploadimg(cls, picUrl):
+	def uploadimg(self, picUrl):
 		pass
 
 
-class Material(object):
+class Material(Api):
 
 	api = {
 
 	}
 
 
-class Menu(object):
+class Menu(Api):
 
 	api = {
 		"get": "https://api.weixin.qq.com/cgi-bin/menu/get",
@@ -106,19 +101,52 @@ class Menu(object):
 
 	Backup_Menu_File = "menu_bac.json"
 
-	@classmethod
-	def get(cls):
-		return ApiRequest.get(cls.api['get'])
+	def get(self):
+		return self.apiRequest.get(self.api['get'])
 
-	@classmethod
-	def create(cls, menu):
-		return ApiRequest.post(cls.api['create'],menu)
+	def create(self, menu):
+		return self.apiRequest.post(self.api['create'],menu)
 
-	@classmethod
-	def delete(cls):
-		return ApiRequest.get(cls.api['delete'])
+	def delete(self):
+		return self.apiRequest.get(self.api['delete'])
+
 
 	@property
+	def custom_menu(self):
+		return {
+			'button': [
+				{
+					'type': 'click',
+					'name': '关于北青',
+					'key': 'about_us',
+				},
+				{
+					'type': 'click',
+					'name': '栏目精选',
+					'key': 'list_columns',
+				},
+				{
+					'name': '文章检索',
+					'sub_button': [
+						{
+							'type': 'click',
+							'name': '号内Q搜索',
+							'key': 'introduce_Q',
+						},
+						{
+							'type': 'miniprogram',
+							'name': '小程序',
+							'url': 'https://mp.weixin.qq.com',
+							'appid': 'wx6213212a86e2986f',
+							'pagepath': 'pages/index/index',
+						},
+					],
+				},
+			],
+		}
+
+
+	'''@property
 	def custom_menu(self):
 		url_prefix = "https://mp.weixin.qq.com/mp/homepage?__biz=MzA3NzAzMDEyNg==&hid=%d&scene=18"
 		return {
@@ -138,7 +166,8 @@ class Menu(object):
 					("布", [("摄影",2),("言己",3),("雕龙",4),("又见",9),("评论",8)]),
 				]
 			]
-		}
+		}'''
+
 
 	def get_menu(self):
 		return self.get()
@@ -154,3 +183,10 @@ class Menu(object):
 
 	def revert_menu(self, log=True):
 		self.update_menu(json_load(self.Backup_Menu_File), log=log)
+
+
+if __name__ == '__main__':
+	menu = Menu(account='pkuyouth')
+	menu.update_menu()
+	# menu.get_menu()
+	# menu.update_menu()

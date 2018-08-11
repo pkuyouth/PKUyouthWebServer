@@ -10,14 +10,14 @@ __all__ = [
     "UnregisteredError",
 ]
 
-class VerifyTimestampError(Exception):
+class VerifyTimestampError(BaseException):
     pass
 
-class VerifyTokenError(Exception):
+class VerifyTokenError(BaseException):
     pass
 
-class VerifySignatureError(Exception):
+class VerifySignatureError(BaseException):
     pass
 
-class UnregisteredError(Exception):
+class UnregisteredError(BaseException):
     pass

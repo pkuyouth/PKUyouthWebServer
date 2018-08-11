@@ -4,31 +4,29 @@
 
 import os
 import sys
+import time
 import re
 from datetime import datetime
 from collections import OrderedDict
 import logging
+import requests
 import sqlite3
 import pymongo
-import smtplib
-from email.mime.text import MIMEText
-from email.utils import formataddr
+# import smtplib
+# from email.mime.text import MIMEText
+# from email.utils import formataddr
 from werkzeug.security import generate_password_hash, check_password_hash
 from itsdangerous import JSONWebSignatureSerializer as Serializer
-from whoosh.index import open_dir
-from whoosh.fields import Schema, NUMERIC, TEXT #不可import × 否则与datetime冲突！
-from whoosh.qparser import QueryParser, MultifieldParser
+
 
 try:
-	from .utilfuncs import pkl_load, get_secret, iter_flat
-	from .jieba_whoosh.analyzer import ChineseAnalyzer
+	from .utilfuncs import pkl_load, pkl_dump, get_secret, iter_flat
 except (ImportError,SystemError,ValueError):
-	from utilfuncs import pkl_load, get_secret, iter_flat
-	from jieba_whoosh.analyzer import ChineseAnalyzer
-
+	from utilfuncs import pkl_load, pkl_dump, get_secret, iter_flat
 
 
 basedir = os.path.join(os.path.dirname(__file__),"../") # app根目录
+cachedir = os.path.join(basedir,"cache")
 
 
 __all__ = [
@@ -38,6 +36,7 @@ __all__ = [
 	"MongoDB",
 	"SQLiteDB",
 	#"WhooshIdx",
+	"WxAuth",
 ]
 
 
@@ -138,23 +137,23 @@ class Logger(object):
 			raise ValueError("attr -- 'console_log' should be set to True/False !")
 
 
-	def debug(self, *arg, **kw):
-		return self.__logger.debug(*arg, **kw)
+	def debug(self, *args, **kwargs):
+		return self.__logger.debug(*args, **kwargs)
 
-	def info(self, *arg, **kw):
-		return self.__logger.info(*arg, **kw)
+	def info(self, *args, **kwargs):
+		return self.__logger.info(*args, **kwargs)
 
-	def warning(self, *arg, **kw):
-		return self.__logger.warning(*arg, **kw)
+	def warning(self, *args, **kwargs):
+		return self.__logger.warning(*args, **kwargs)
 
-	def error(self, *arg, **kw):
-		return self.__logger.error(*arg, **kw)
+	def error(self, *args, **kwargs):
+		return self.__logger.error(*args, **kwargs)
 
-	def critical(self, *arg, **kw):
-		return self.__logger.critical(*arg, **kw)
+	def critical(self, *args, **kwargs):
+		return self.__logger.critical(*args, **kwargs)
 
-	def __call__(self, *arg, **kw):
-		return self.info(*arg, **kw)
+	def __call__(self, *args, **kwargs):
+		return self.debug(*args, **kwargs)
 
 '''
 class Mailer(object):
@@ -457,19 +456,19 @@ class SQLiteDB(object):
 		elif isinstance(newsID, (list,tuple,set)):
 			newsIDs = list(newsID)
 		newsInfo = self.cur.execute("""
-		        SELECT  title,
-		                date(masssend_time) AS time,
-		                -- cover AS cover_url,
-		                sn,
-		                -- content_url AS news_url,
-		                like_num,
-		                read_num,
-		                in_use,
-		                i.newsID
-		        FROM newsInfo AS i INNER JOIN newsDetail AS d ON i.newsID == d.newsID
-		        WHERE i.newsID IN (%s)
-		        ORDER BY %s
-		    """ % (','.join('?'*len(newsIDs)),	orderBy), newsIDs).fetchall()
+				SELECT  title,
+						date(masssend_time) AS time,
+						-- cover AS cover_url,
+						sn,
+						-- content_url AS news_url,
+						like_num,
+						read_num,
+						in_use,
+						i.newsID
+				FROM newsInfo AS i INNER JOIN newsDetail AS d ON i.newsID == d.newsID
+				WHERE i.newsID IN (%s)
+				ORDER BY %s
+			""" % (','.join('?'*len(newsIDs)),	orderBy), newsIDs).fetchall()
 
 		if filter_in_use:
 			newsInfo = [news for news in newsInfo if news['in_use']]
@@ -483,24 +482,44 @@ class SQLiteDB(object):
 		return self.single_cur.execute("SELECT newsID FROM newsDetail WHERE in_use == 0").fetchall()
 
 
-class WhooshIdx(object): # 暂时不用
 
-	idxName = "news_index_whoosh"
-	idxDir = os.path.join(basedir,"database",idxName)
+class WxAuth(requests.auth.AuthBase):
 
-	if not os.path.exists(idxDir):
-		os.mkdir(idxDir)
+	Critical_Time = 60
 
-	def __init__(self):
-		self.analyzer = ChineseAnalyzer()
-		self.schema = Schema(
-				newsID = TEXT(stored=True),
-				title = TEXT(stored=True, analyzer=self.analyzer),
-				content = TEXT(stored=True, analyzer=self.analyzer),
-			)
+	def __init__(self, account):
+		assert account in ('rabbitw', 'test', 'pkuyouth')
+		self.account = account
+		self.logger = Logger("%s.auth" % account,)
 
-	def __enter__(self):
-		return self
+		self.Access_Token_File = "%s_accesstoken.pkl" % account
+		self.Access_Token_Expired_File = "%s_accesstoken_expired.pkl" % account
 
-	def __exit__(self, type, value, trace):
-		pass
+		self.__appId = get_secret("%s_appID.pkl" % account)
+		self.__appSecret = get_secret("%s_appSecret.pkl" % account)
+
+		self.__access_token = pkl_load(cachedir, self.Access_Token_File, default='', log=False)
+		self.__expired = pkl_load(cachedir, self.Access_Token_Expired_File, default=0, log=False)
+
+
+	def __update_token(self):
+		self.logger.info('[%s] get access_token' % self.account)
+		respJson = requests.get("https://api.weixin.qq.com/cgi-bin/token",params={
+				"grant_type": "client_credential",
+				"appid": self.__appId,
+				"secret": self.__appSecret,
+			}).json()
+		if "errcode" not in respJson:
+			self.__access_token = respJson['access_token']
+			self.__expired = int(time.time()) + respJson['expires_in'] - self.Critical_Time # 减掉 一小节
+			pkl_dump(cachedir, self.Access_Token_File, self.__access_token, log=False)
+			pkl_dump(cachedir, self.Access_Token_Expired_File, self.__expired, log=False)
+		else:
+			self.logger.error(respJson)
+			raise requests.HTTPError(respJson)
+
+	def __call__(self, r):
+		if self.__expired < time.time() + self.Critical_Time:
+			self.__update_token()
+		r.prepare_url(r.url, {'access_token': self.__access_token})
+		return r

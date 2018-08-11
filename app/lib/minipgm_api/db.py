@@ -236,11 +236,9 @@ class ReporterDB(MongoDB):
 		return {
 			"_id": get_MD5(name),
 			"name": name,
-			"realName": realName, # 如果不是化名则存为 None
-			"newsIDs": newsIDs,
+			"news": newsIDs,
 			"avatar": "", # 头像
 			"desc": "", # 作者描述
-			"like": 0, # 点赞数
 		}
 
 	def add_rpt(self, name, newsIDs):

@@ -23,6 +23,8 @@ def parse_msg(xmlContent):
 			return FollowEvent(tree)
 		elif eventType == 'unsubscribe':
 			return UnFollowEvent(tree)
+		elif eventType in ('CLICK',):
+			return MeauEvent(tree)
 		else:
 			return xmlContent
 	else:

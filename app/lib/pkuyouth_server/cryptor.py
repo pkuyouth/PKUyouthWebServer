@@ -89,8 +89,8 @@ class Prpcrypt(object):
 
 class Cryptor(object):
 
-    #appId = get_secret('pkuyouth_appID.pkl')
-    appId = get_secret('rabbitw_appID.pkl')
+    #appId = get_secret('rabbitw_appID.pkl')
+    appId = get_secret('pkuyouth_appID.pkl')
     token = get_secret('pkuyouth_token.pkl')
     encodingAESKey = get_secret('pkuyouth_encodingAESKey.pkl')
 
