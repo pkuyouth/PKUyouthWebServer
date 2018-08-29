@@ -123,7 +123,7 @@ class NewsDB(SQLiteDB):
 
 	def search_by_keyword(self, keyword, limit):
 		resultsList = newsIdx.search_strings(
-				querystring = " OR ".join(keyword.strip().split()), # 以 OR 连接空格分开的词
+				querystring = " AND ".join(keyword.strip().split()), # 以 AND 连接空格分开的词
 				fields = ["title","content"],
 				limit = limit,
 			)
