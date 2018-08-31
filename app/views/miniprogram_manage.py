@@ -7,7 +7,6 @@ from flask import Blueprint
 miniprogram_manage = Blueprint('miniprogram_manage', __name__)
 
 import os
-import re
 import math
 
 basedir = os.path.join(os.path.dirname(__file__),"..") # 根目录为app
@@ -19,8 +18,8 @@ import sqlite3
 from pypinyin import lazy_pinyin
 
 from ..lib.utilfuncs import dictToESC, get_secret, iter_flat
-from ..lib.utilclass import Logger, SQLiteDB
-from ..lib.minipgm_api.util import int_param, limited_param, str_param
+from ..lib.utilclass import Logger, SQLiteDB as NewsDB
+from ..lib.minipgm_api.util import limited_param
 
 
 from flask import render_template, redirect, url_for, request, jsonify, abort
@@ -113,6 +112,7 @@ def reporter_list():
 	else:
 		return render_template("miniprogram_manage/reporter.html",pageNum=pageNum,thisPage=thisPage,newsInfo=newsInfo)
 
+
 @miniprogram_manage.route('/change',methods=['POST'])
 def change():
 	try:
@@ -133,9 +133,3 @@ def change():
 	finally:
 		db.close()
 		return jsonify(jsonPack)
-
-
-class NewsDB(SQLiteDB):
-
-	def __init__(self):
-		SQLiteDB.__init__(self)

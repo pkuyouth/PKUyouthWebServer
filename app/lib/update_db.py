@@ -15,13 +15,14 @@ import requests
 from urllib.parse import urlparse, parse_qs
 from bs4 import BeautifulSoup
 
-from whoosh.index import create_in
+from whoosh.index import create_in, open_dir
 from whoosh.fields import Schema, TEXT # 不可直接 import × 否则与 datetime 冲突
 
 # 直接运行
 from utilfuncs import pkl_load, pkl_dump, show_status
 from utilclass import Logger, SQLiteDB
 from jieba_whoosh.analyzer import ChineseAnalyzer
+from tfidf import TFIDF
 
 
 basedir = os.path.join(os.path.dirname(__file__),"..") # 根目录为app
@@ -31,7 +32,7 @@ pkl_dump = partial(pkl_dump, cachedir)
 pkl_load = partial(pkl_load, cachedir)
 
 
-logger = Logger()
+logger = Logger("update_db")
 logger.file_log = False
 
 
@@ -68,12 +69,16 @@ class WxSpider(object):
 			}).json()["sent_list"]
 
 	def batchget_newsInfo(self, begin=0):
+		def begin_generator():
+			begin = 0
+			while True:
+				yield begin
+				begin += 7
 		totalNewsInfo = []
-		while True:
+		for begin in show_status(begin_generator(),"Getting newsInfo ..."):
 			newsInfo = self.get_newsInfo(begin)
 			if newsInfo != []:
 				totalNewsInfo.extend(newsInfo)
-				begin += 7
 			else:
 				break
 		return totalNewsInfo
@@ -86,7 +91,7 @@ class WxSpider(object):
 		}
 
 	def batchget_newsContent(self, newsInfos):
-		for news in show_status(newsInfos,"Getting newsContent..."):
+		for news in show_status(newsInfos,"Getting newsContent ..."):
 			news.update(self.get_newsContent(news))
 			news.pop("content_url")
 		return newsInfos
@@ -94,8 +99,9 @@ class WxSpider(object):
 
 class NewsDB(SQLiteDB):
 
-	cacheNewsInfo = "newsInfo.pkl"
-	cacheNewsContent = "newsContent.pkl"
+	Cache_NewsInfo = "newsInfo.pkl"
+	Cache_NewsContent = "newsContent.pkl"
+
 
 	def create_table(self, tableName, rebuild=False):
 		try:
@@ -144,15 +150,15 @@ class NewsDB(SQLiteDB):
 			raise err
 
 
-	def build_table_newsInfo(self, rebuild=False, fromCache=False):
+	def update_table_newsInfo(self, method="update", fromCache=False):
 		"""构造群发图文信息表"""
 		try:
 			if not fromCache:
 				logger.info("Getting newsInfo...")
 				totalNewsInfo = WxSpider().batchget_newsInfo()
-				pkl_dump(self.cacheNewsInfo, totalNewsInfo)
+				pkl_dump(self.Cache_NewsInfo, totalNewsInfo)
 			else: #从本地获取
-				totalNewsInfo = pkl_load(self.cacheNewsInfo)
+				totalNewsInfo = pkl_load(self.Cache_NewsInfo)
 
 			fields = {"newsID","appmsgid","idx","sn","title","cover","content_url","like_num","read_num","masssend_time"}
 			newsDicts = []
@@ -175,45 +181,90 @@ class NewsDB(SQLiteDB):
 					news.update({"masssend_time": datetime.fromtimestamp(masssend_time)})
 					newsDicts.append(news)
 
-			# self.create_table("newsInfo", rebuild=rebuild) # insert or replace 不需要重建表
-			self.insert_many("newsInfo", newsDicts)
-			logger.info("Table newsInfo Create Success !")
+			if method == "rebuild":
+				self.insert_many("newsInfo", newsDicts)
+				logger.info("Table newsInfo Create Success !")
+			elif method == "update":
+				oldNewsIDs = set(self.get_newsIDs())
+				nowNewsIDs = set(news["newsID"] for news in newsDicts)
 
-		except Exception as err:
-			raise err
+				new = nowNewsIDs - oldNewsIDs # 新发的文章
+				self.insert_many("newsInfo", [news for news in newsDicts if news["newsID"] in new])
 
-	def build_table_newsContent(self, rebuild=False, fromCache=False):
-		try:
-			if not fromCache:
-				newsContents = WxSpider().batchget_newsContent(self.select("newsInfo", ("newsID","title","content_url")).fetchall())
-				pkl_dump(self.cacheNewsContent, newsContents)
+				delete = oldNewsIDs - nowNewsIDs # 删除的文章
+				for newsID in delete:
+					pass
+
+				logger.info("Table newsInfo Update Success !")
 			else:
-				newsContents = pkl_load(self.cacheNewsContent)
+				raise ValueError("unexpected method '%s' !" % method)
 
-			self.create_table("newsContent", rebuild=rebuild)
-			self.insert_many("newsContent", newsContents)
-			logger.info("Table newsContent Create Success !")
 		except Exception as err:
 			raise err
 
-	def build_table_newsDetail(self): # 基于 newsInfo
+
+	def update_table_newsContent(self, method="update", fromCache=False):
 		try:
-			newsDetail = self.select("newsInfo",("newsID","title")).fetchall()
-			re_square_brackets = re.compile(r'^【(.*?)】')
-			re_pipe = re.compile(r'[|｜〡丨]')
-			for news in newsDetail:
-				title = news.pop("title")
-				if re_square_brackets.match(title):
-					column = re_square_brackets.match(title).group(1)
+			if method == "rebuild":
+				if not fromCache:
+					newsContents = WxSpider().batchget_newsContent(self.select("newsInfo", ("newsID","title","content_url")).fetchall())
+					pkl_dump(self.Cache_NewsContent, newsContents)
 				else:
-					column = re_pipe.split(title)[0]
-				news.update({"column": column.strip()})
+					newsContents = pkl_load(self.Cache_NewsContent)
+				self.insert_many("newsContent", newsContents)
+				logger.info("Table newsContent Create Success !")
+			elif method == "update":
+				oldNewsIDs = set(self.single_cur.execute("SELECT newsID FROM newsContent").fetchall())
+				nowNewsIDs = set(self.get_newsIDs())
 
-			self.create_table("newsDetail", rebuild=True)
-			self.insert_many("newsDetail", newsDetail)
-			logger.info("Table newsDetail Create Success !")
+				new = nowNewsIDs - oldNewsIDs # 新发的文章
+				newsInfos = self.select("newsInfo", ("newsID","title","content_url")).fetchall()
+				newsContents = WxSpider().batchget_newsContent([news for news in newsInfos if news["newsID"] in new])
+				self.insert_many("newsContent", newsContents)
+				logger.info("Table newsContent Update Success !")
+			else:
+				raise ValueError("unexpected method '%s' !" % method)
+
 		except Exception as err:
 			raise err
+
+
+	def update_table_newsDetail(self, method="update"): # 基于 newsInfo
+		try:
+			if method == "rebuild": # rebuild 前必须要备份数据库 ！
+				self.create_table("newsDetail", rebuild=True)
+				newsDetail = self.select("newsInfo",("newsID","title")).fetchall()
+			elif method == "update":
+				oldNewsIDs = set(self.single_cur.execute("SELECT newsID FROM newsDetail").fetchall())
+				nowNewsIDs = set(self.get_newsIDs())
+				new = nowNewsIDs - oldNewsIDs # 新发的文章
+				newsDetail = self.select("newsInfo",("newsID","title")).fetchall()
+				newsDetail = [news for news in newsDetail if news["newsID"] in new]
+			else:
+				raise ValueError("unexpected method '%s' !" % method)
+
+			if newsDetail != []:
+				re_square_brackets = re.compile(r'^【(.*?)】')
+				re_pipe = re.compile(r'[|｜〡丨]')
+
+				for news in newsDetail:
+					title = news.pop("title")
+					if re_square_brackets.match(title):
+						column = re_square_brackets.match(title).group(1)
+					else:
+						column = re_pipe.split(title)[0]
+					news.update({"column": column.strip()})
+
+				self.insert_many("newsDetail", newsDetail)
+
+			if method == "rebuild":
+				logger.info("Table newsDetail Create Success !")
+			elif method == "update":
+				logger.info("Table newsDetail Update Success !")
+
+		except Exception as err:
+			raise err
+
 
 
 class WhooshIdx(object):
@@ -232,33 +283,68 @@ class WhooshIdx(object):
 				content = TEXT(stored=True, analyzer=self.analyzer),
 			)
 
-	def create_idx(self):
-		ix = create_in(self.idxDir, schema=self.schema, indexname=self.idxName)
+	def add_news(self, newsList, ix=None):
+		if ix is None:
+			ix = open_dir(self.idxDir, schema=self.schema, indexname=self.idxName)
 		with ix.writer() as writer:
-			with NewsDB() as db:
-				newsContents = db.select("newsContent", ("newsID","title","content")).fetchall()
-			for news in show_status(newsContents, "Creating %s" % self.idxName):
+			for news in show_status(newsList, "Add documents to %s" % self.idxName):
 				writer.add_document(**news)
 			logger.info("Committing ...")
+
+	def create_idx(self):
+		ix = create_in(self.idxDir, schema=self.schema, indexname=self.idxName)
+		logger.info("Creating %s" % self.idxName)
+		with NewsDB() as db:
+			newsContents = db.select("newsContent", ("newsID","title","content")).fetchall()
+			self.add_news(newsContents, ix)
 		logger.info("%s create success !" % self.idxName)
+
+	def update_idx(self):
+		ix = open_dir(self.idxDir, schema=self.schema, indexname=self.idxName)
+		logger.info("Update %s" % self.idxName)
+		with NewsDB() as db:
+			nowNewsIDs = set(db.get_newsIDs())
+			with ix.searcher() as searcher:
+				oldNewsIDs = set(hit['newsID'] for hit in searcher.documents())
+			new = nowNewsIDs - oldNewsIDs
+			newsContents = db.select("newsContent", ("newsID","title","content")).fetchall()
+			newsContents = [news for news in newsContents if news["newsID"] in new]
+			self.add_news(newsContents, ix)
+		logger.info("%s update success !" % self.idxName)
 
 
 if __name__ == '__main__':
 
-	''''parser = OptionParser()
+	parser = OptionParser()
 	parser.add_option("-t", "--token", dest="token")
 	parser.add_option("-c", "--cookies", dest="cookies")
+	parser.add_option("-r", "--rebuild", dest="rebuild", action="store_true")
 	options, args = parser.parse_args()
-	token, cookies = options.token, options.cookies
+	token, cookies, rebuild = options.token, options.cookies, options.rebuild
 
 	if all([token,cookies]):
 		WxSpider.token = token
 		WxSpider.cookies = cookies
-		with NewsDB() as db:
-			db.build_table_newsInfo(rebuild=True,fromCache=False)
-			db.build_table_newsContent(rebuild=True,fromCache=False)
-		WhooshIdx().create_idx()
-		logger.info("update done !")'''
 
-	with NewsDB() as db:
-		db.build_table_newsContent(rebuild=True,fromCache=False)
+		if rebuild:
+			with NewsDB() as db:
+				db.update_table_newsInfo(method="rebuild", fromCache=False)
+				db.update_table_newsContent(method="rebuild", fromCache=False)
+				db.update_table_newsDetail(method="update")
+			WhooshIdx().create_idx()
+		else: # 正常更新
+			with NewsDB() as db:
+				db.update_table_newsInfo(fromCache=False)
+				db.update_table_newsContent(fromCache=False)
+				db.update_table_newsDetail(method="update")
+			WhooshIdx().update_idx()
+
+		logger.info("update TFIDF ...")
+		tfidf = TFIDF().init_for_update()
+		tfidf.update()
+		logger.info("update TFIDF success !")
+
+		if rebuild:
+			logger.info("rebuild done !")
+		else:
+			logger.info("update done !")

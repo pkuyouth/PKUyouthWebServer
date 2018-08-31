@@ -67,6 +67,7 @@ Welcome_Reply = lambda: template_reply('welcome.txt')
 Q_Intro_Reply = lambda: template_reply('q_intro.txt')
 Columns_Intro_Reply = lambda: template_reply('columns_intro.txt')
 About_Us_Reply = lambda: template_reply('about_us.txt')
+Join_Us_Reply = lambda: template_reply('join_us.txt')
 
 
 Reply_Interval = 60 * 1 # 一分钟内不重复回复
@@ -160,7 +161,8 @@ def root():
 						else:
 							replyMsg = interval_reply(reply.TextMsg, toUser, fromUser, Default_Reply)
 				elif msgType == 'image':
-					replyMsg = reply.ImageMsg(toUser, fromUser, recMsg.MediaId)
+					# replyMsg = reply.ImageMsg(toUser, fromUser, recMsg.MediaId)
+					replyMsg = interval_reply(reply.TextMsg, toUser, fromUser, Default_Reply)
 				return send_msg(replyMsg)
 			elif isinstance(recMsg, receive.Event):
 				toUser, fromUser, eventType = recMsg.FromUserName, recMsg.ToUserName, recMsg.Event
@@ -176,10 +178,10 @@ def root():
 						replyMsg = reply.TextMsg(toUser, fromUser, Columns_Intro_Reply())
 					elif key == 'about_us':
 						replyMsg = reply.TextMsg(toUser, fromUser, About_Us_Reply())
+					elif key == 'join_us':
+						replyMsg = reply.TextMsg(toUser, fromUser, Join_Us_Reply())
 					elif key == 'introduce_Q':
 						replyMsg = reply.TextMsg(toUser, fromUser, Q_Intro_Reply())
-					elif key == 'miniprogram':
-						replyMsg = reply.TextMsg(toUser, fromUser, '测试号无法绑定小程序')
 					else:
 						logger.info(recMsg)
 				return send_msg(replyMsg)

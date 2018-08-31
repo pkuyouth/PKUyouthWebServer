@@ -117,8 +117,19 @@ class Menu(Api):
 			'button': [
 				{
 					'type': 'click',
-					'name': '关于北青',
-					'key': 'about_us',
+					'name': '走进北青',
+					'sub_button': [
+						{
+							'type': 'click',
+							'name': '关于我们',
+							'key': 'about_us',
+						},
+						{
+							'type': 'click',
+							'name': '加入我们',
+							'key': 'join_us',
+						},
+					],
 				},
 				{
 					'type': 'click',

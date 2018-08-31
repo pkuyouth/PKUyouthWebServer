@@ -57,7 +57,7 @@ config = {
 		"version": "1.0.0",
 	},
 	"qr_code": {
-		"recruit": Aliyun_Image_Prefix + "/qr_code/qrcode_recurit_not_yet_released.jpg"
+		"recruit": Aliyun_Image_Prefix + "/qr_code/qrcode_recruit.png"
 	}
 }
 
