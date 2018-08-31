@@ -74,7 +74,7 @@ class Logger(object):
 
 	@property
 	def format(self):
-		fmt = "[%(levelname)s] %(name)%, %(asctime).19s, %(message)s"
+		fmt = "[%(levelname)s] %(name)s, %(asctime).19s, %(message)s"
 		return logging.Formatter(fmt)
 
 	@property

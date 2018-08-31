@@ -23,6 +23,7 @@ from utilfuncs import pkl_load, pkl_dump, show_status
 from utilclass import Logger, SQLiteDB
 from jieba_whoosh.analyzer import ChineseAnalyzer
 from tfidf import TFIDF
+from static import StaticManager, Bg_Cover_Dir, Sm_Cover_Dir
 
 
 basedir = os.path.join(os.path.dirname(__file__),"..") # 根目录为app
@@ -326,23 +327,62 @@ if __name__ == '__main__':
 		WxSpider.token = token
 		WxSpider.cookies = cookies
 
-		if rebuild:
+		if rebuild: # 未测试 ！ 为修改静态
 			with NewsDB() as db:
 				db.update_table_newsInfo(method="rebuild", fromCache=False)
+				newsIDs = db.get_newsIDs()
+
+			# ---------------- #
+			#  以下代码未经测试！ #
+			# ---------------- #
+			logger.info("update static server ...")
+			static = StaticManager()
+			static.to_jpeg(overwrite=True)
+			static.cv_compress_sm(overwrite=True) # 直接输出即可
+			static.cv_compress_bg(overwrite=True)
+			# static.deep_compress(Pre_Sm_Cover_Dir, Sm_Cover_Dir, quality=95) # 不要用这个压缩小图，否则容易不清楚！
+			static.deep_compress(imgType="bg", overwrite=True)
+			static.upload_folder(Sm_Cover_Dir, overwrite=True)
+			static.upload_folder(Bg_Cover_Dir, overwrite=True)
+			logger.info("update static server success !")
+
+			with NewsDB() as db:
 				db.update_table_newsContent(method="rebuild", fromCache=False)
 				db.update_table_newsDetail(method="update")
+
 			WhooshIdx().create_idx()
+			logger.info("update TFIDF ...")
+			tfidf = TFIDF().init_for_update()
+			tfidf.update()
+			logger.info("update TFIDF success !")
+
 		else: # 正常更新
 			with NewsDB() as db:
 				db.update_table_newsInfo(fromCache=False)
+				newsIDs = db.get_newsIDs()
+
+			# 更新id后马上先更新静态服务器，避免在更新空档期用户访问图片造成404界面缓存
+			logger.info("update static server ...")
+			static = StaticManager(newsIDs)
+			static.download_covers()
+			static.to_jpeg()
+			static.cv_compress_sm() # 直接输出即可
+			static.cv_compress_bg()
+			# static.deep_compress(Pre_Sm_Cover_Dir, Sm_Cover_Dir, quality=95) # 不要用这个压缩小图，否则容易不清楚！
+			static.deep_compress(imgType="bg")
+			static.upload_folder(Sm_Cover_Dir)
+			static.upload_folder(Bg_Cover_Dir)
+			logger.info("update static server success !")
+
+			with newsDB() as db:
 				db.update_table_newsContent(fromCache=False)
 				db.update_table_newsDetail(method="update")
-			WhooshIdx().update_idx()
 
-		logger.info("update TFIDF ...")
-		tfidf = TFIDF().init_for_update()
-		tfidf.update()
-		logger.info("update TFIDF success !")
+			WhooshIdx().update_idx()
+			logger.info("update TFIDF ...")
+			tfidf = TFIDF().init_for_update()
+			tfidf.update()
+			logger.info("update TFIDF success !")
 
 		if rebuild:
 			logger.info("rebuild done !")

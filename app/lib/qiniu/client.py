@@ -7,6 +7,7 @@ import os
 from io import BytesIO
 from requests import Session, Request
 from requests_toolbelt import MultipartEncoder
+import simplejson as json
 
 try:
     from .auth import QiniuAuth
@@ -19,6 +20,8 @@ try:
     from ..lib.utilfuncs import get_secret
     from ..lib.utilclass import Logger
 except (ImportError,SystemError,ValueError):
+    import sys
+    sys.path.append("../")
     from utilfuncs import get_secret
     from utilclass import Logger
 
@@ -93,43 +96,6 @@ class QiniuClient(object):
                 'tbl': self.Bucket
             }))
 
-    def upload(self, file, remote_folder='', fileBytes=None, **kwargs):
-        if fileBytes is None:
-            if os.path.exists(file) and not os.path.isdir(file):
-                oFile = open(file,'rb')
-            else:
-                raise Exception
-        else:
-            oFile = BytesIO(fileBytes)
-        filename = self.__remote_path(remote_folder, file)
-        self.logger(filename)
-        encoder = MultipartEncoder(
-                fields={
-                    'key': filename,
-                    'token': self.__auth.upload_token(self.Bucket, filename),
-                    'file': (filename, oFile, 'application/octet-stream'),
-                }
-            )
-        resp = self.post('/', self.Hosts['up'], data=encoder.to_string(), headers={
-                'Content-Type': encoder.content_type
-            }, **kwargs)
-        oFile.close()
-        return self.__form_results(resp)
-
-    def upload_dir(self, path, remote_folder='', ignore=None):
-        """ 递归上传所在目录的文件到 remote_folder
-        """
-        path = path.strip('/')
-        for subpath in os.listdir(path):
-            file = os.path.join(path, subpath)
-            if ignore is not None and ignore(file):
-                continue
-            elif not os.path.isdir(file):
-                self.upload(file, remote_folder)
-            else:
-                self.upload_dir(path=file,
-                    remote_folder=os.path.join(remote_folder, subpath))
-
     def list(self, prefix='', limit=1000, marker='', delimiter=''):
         resp = self.get('/list', self.Hosts['rsf'], params={
                 'bucket': self.Bucket,
@@ -138,7 +104,35 @@ class QiniuClient(object):
                 'prefix': self.__remote_path(prefix),
                 'delimiter': delimiter,
             })
-        return resp.json()['items']
+        return resp.json()
+
+    def upload(self, file, remote_folder='', fileBytes=None, overwrite=False, existedFiles=None, **kwargs):
+        filename = self.__remote_path(remote_folder, file)
+        if not overwrite and filename in existedFiles:
+            return
+        else:
+            self.logger(filename)
+
+            if fileBytes is None:
+                if os.path.exists(file) and not os.path.isdir(file):
+                    oFile = open(file,'rb')
+                else:
+                    raise Exception
+            else:
+                oFile = BytesIO(fileBytes)
+
+            encoder = MultipartEncoder(
+                    fields={
+                        'key': filename,
+                        'token': self.__auth.upload_token(self.Bucket, filename),
+                        'file': (filename, oFile, 'application/octet-stream'),
+                    }
+                )
+            resp = self.post('/', self.Hosts['up'], data=encoder.to_string(), headers={
+                    'Content-Type': encoder.content_type
+                }, **kwargs)
+            oFile.close()
+            return self.__form_results(resp)
 
     def delete(self, file, remote_folder=''):
         path = self.__remote_path(remote_folder, file)
@@ -149,6 +143,36 @@ class QiniuClient(object):
         path = self.__remote_path(remote_folder, file)
         resp = self.get('/stat/%s' % self.__auth.encoded_entry_uri(self.Bucket, path), self.Hosts['rs'])
         return resp.json()
+
+    def list_dir(self, prefix='', limit=1000, marker='', delimiter=''):
+        marker = ''
+        items = []
+        while True:
+            if marker is None:
+                break
+            respJson = self.list(marker=marker)
+            items.extend(respJson['items'])
+            marker = respJson.get('marker')
+        return items
+
+    def upload_dir(self, path, remote_folder='', ignore=None, overwrite=False, existedFiles=None):
+        """ 递归上传所在目录的文件到 remote_folder
+        """
+        if not overwrite and existedFiles is None:
+            existedFiles = set(item["key"] for item in self.list_dir())
+
+        path = path.strip('/')
+        for subpath in os.listdir(path):
+            file = os.path.join(path, subpath)
+            if ignore is not None and ignore(file):
+                continue
+            elif not os.path.isdir(file):
+                self.upload(file, remote_folder, overwrite=overwrite, existedFiles=existedFiles)
+            else:
+                self.upload_dir(path=file,
+                    remote_folder=os.path.join(remote_folder, subpath),
+                    ignore=ignore, overwrite=overwrite, existedFiles=existedFiles)
+
 
     def delete_dir(self, path, remote_folder='', ignore=None):
         """ 递归删除本地文件在远端相应位置对应的文件
@@ -163,8 +187,6 @@ class QiniuClient(object):
                 self.delete(file, folder)
 
 
-
-'''
 if __name__ == '__main__':
     client = QiniuClient()
 
@@ -181,7 +203,7 @@ if __name__ == '__main__':
 
     # results = client.delete_dir('./images/', remote_folder='/images')
 
-    # results = client.list()
+    results = client.list_dir()
     # print(json.dumps(results, indent=4))
 
-'''
+
