@@ -374,7 +374,7 @@ if __name__ == '__main__':
 			static.upload_folder(Bg_Cover_Dir)
 			logger.info("update static server success !")
 
-			with newsDB() as db:
+			with NewsDB() as db:
 				db.update_table_newsContent(fromCache=False)
 				db.update_table_newsDetail(method="update")
 
