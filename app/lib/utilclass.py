@@ -455,6 +455,7 @@ class SQLiteDB(object):
 			newsIDs = [newsID,]
 		elif isinstance(newsID, (list,tuple,set)):
 			newsIDs = list(newsID)
+
 		newsInfo = self.cur.execute("""
 				SELECT  title,
 						date(masssend_time) AS time,
@@ -468,7 +469,7 @@ class SQLiteDB(object):
 				FROM newsInfo AS i INNER JOIN newsDetail AS d ON i.newsID == d.newsID
 				WHERE i.newsID IN (%s)
 				ORDER BY %s
-			""" % (','.join('?'*len(newsIDs)),	orderBy), newsIDs).fetchall()
+			""" % (','.join('?'*len(newsIDs)), orderBy), newsIDs).fetchall()
 
 		if filter_in_use:
 			newsInfo = [news for news in newsInfo if news['in_use']]

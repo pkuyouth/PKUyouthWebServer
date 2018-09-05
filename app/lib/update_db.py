@@ -45,8 +45,11 @@ class WxSpider(object):
 	cookies = ''
 	token = ''
 
+	reDigest = re.compile(r'var msg_desc = "(.*?)";')
+
 	def __init__(self):
-		self.reDigest = re.compile(r'var msg_desc = "(.*?)";');
+		if self.__class__.cookies == '' or self.__class__.token == '':
+			raise Exception('cookies or token for WebSpider is missing !')
 
 	@property
 	def headers(self):
@@ -186,7 +189,7 @@ class NewsDB(SQLiteDB):
 				self.insert_many("newsInfo", newsDicts)
 				logger.info("Table newsInfo Create Success !")
 			elif method == "update":
-				oldNewsIDs = set(self.get_newsIDs())
+				'''oldNewsIDs = set(self.get_newsIDs())
 				nowNewsIDs = set(news["newsID"] for news in newsDicts)
 
 				new = nowNewsIDs - oldNewsIDs # 新发的文章
@@ -194,8 +197,8 @@ class NewsDB(SQLiteDB):
 
 				delete = oldNewsIDs - nowNewsIDs # 删除的文章
 				for newsID in delete:
-					pass
-
+					pass'''
+				self.insert_many("newsInfo", newsDicts) # newsInfo 表中的阅读量是每天更新的，所以应该全部覆盖
 				logger.info("Table newsInfo Update Success !")
 			else:
 				raise ValueError("unexpected method '%s' !" % method)
@@ -328,7 +331,7 @@ if __name__ == '__main__':
 		WxSpider.cookies = cookies
 
 		if rebuild: # 未测试 ！ 为修改静态
-			with NewsDB() as db:
+			'''with NewsDB() as db:
 				db.update_table_newsInfo(method="rebuild", fromCache=False)
 				newsIDs = db.get_newsIDs()
 
@@ -348,6 +351,11 @@ if __name__ == '__main__':
 
 			with NewsDB() as db:
 				db.update_table_newsContent(method="rebuild", fromCache=False)
+				db.update_table_newsDetail(method="update")'''
+
+			with NewsDB() as db: # 不更新 static 只更新 DB
+				db.update_table_newsInfo(method="rebuild", fromCache=False)
+				db.update_table_newsContent(method="rebuild", fromCache=False)
 				db.update_table_newsDetail(method="update")
 
 			WhooshIdx().create_idx()
@@ -356,7 +364,7 @@ if __name__ == '__main__':
 			tfidf.update()
 			logger.info("update TFIDF success !")
 
-		else: # 正常更新
+		else: # 用于日常更新
 			with NewsDB() as db:
 				db.update_table_newsInfo(fromCache=False)
 				newsIDs = db.get_newsIDs()

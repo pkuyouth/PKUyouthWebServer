@@ -103,13 +103,14 @@ def root():
 	elif request.method == "POST":
 		if set(request.args.keys()) & Post_Base_Args == Post_Base_Args:
 			recMsg = get_msg(request)
+			replyMsg = No_Reply # 默认回复
 			if isinstance(recMsg, receive.Message):
 				toUser, fromUser, msgType = recMsg.FromUserName, recMsg.ToUserName, recMsg.MsgType
 				if msgType == 'text':
 					content = recMsg.Content
 					if content == '[Unsupported Message]':
 						# replyMsg = interval_reply(reply.TextMsg, toUser, fromUser, content) #"未知类型")
-						return send_msg(No_Reply)
+						pass # 不回复
 					#elif content.lower() in admin_cmd: # 修改菜单
 					# 	content = content.lower()
 					#	if toUser not in admin:
@@ -163,7 +164,6 @@ def root():
 				elif msgType == 'image':
 					# replyMsg = reply.ImageMsg(toUser, fromUser, recMsg.MediaId)
 					replyMsg = interval_reply(reply.TextMsg, toUser, fromUser, Default_Reply)
-				return send_msg(replyMsg)
 			elif isinstance(recMsg, receive.Event):
 				toUser, fromUser, eventType = recMsg.FromUserName, recMsg.ToUserName, recMsg.Event
 				if eventType == 'subscribe':
@@ -184,9 +184,9 @@ def root():
 						replyMsg = reply.TextMsg(toUser, fromUser, Q_Intro_Reply())
 					else:
 						logger.info(recMsg)
-				return send_msg(replyMsg)
 			else:
 				logger.info(recMsg)
+			return send_msg(replyMsg)
 		else:
 			return Root_Default_Response
 

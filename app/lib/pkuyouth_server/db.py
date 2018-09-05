@@ -39,6 +39,15 @@ class WhooshIdx(object):
 		self.rels = self.__get_rels()
 		self.discard_docnums = self.__get_discard_docnums()
 
+	def __enter__(self):
+		return self
+
+	def __exit__(self, type, value, trace):
+		self.close()
+
+	def close(self):
+		self.ix.close()
+
 	def __get_rels(self): # newsID 与 docnum 的关系
 		with self.ix.searcher() as searcher:
 			docnums = searcher.document_numbers()
